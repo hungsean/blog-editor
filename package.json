@@ -1,0 +1,18 @@
+{
+  "name": "blog-editor",
+  "module": "index.ts",
+  "type": "module",
+  "private": true,
+  "devDependencies": {
+    "@types/bun": "latest",
+    "@types/node": "^25.6.0",
+    "bun-types": "^1.3.12"
+  },
+  "peerDependencies": {
+    "typescript": "^5"
+  },
+  "dependencies": {
+    "hono": "^4.12.12",
+    "nanoid": "^5.1.7"
+  }
+}

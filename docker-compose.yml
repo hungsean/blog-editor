@@ -1,0 +1,13 @@
+services:
+  blog-editor:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      - blog-editor-data:/data
+    env_file:
+      - .env
+
+volumes:
+  blog-editor-data:

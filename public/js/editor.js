@@ -7,6 +7,7 @@ let saving = false;
 
 const saveStatus = document.getElementById("save-status");
 const btnPublish = document.getElementById("btn-publish");
+const btnRefreshSchema = document.getElementById("btn-refresh-schema");
 const fieldsForm = document.getElementById("fields-form");
 
 async function init() {
@@ -32,6 +33,7 @@ async function init() {
   initEditor();
 
   btnPublish.addEventListener("click", publish);
+  btnRefreshSchema.addEventListener("click", refreshSchema);
 }
 
 function renderFields() {
@@ -106,7 +108,7 @@ function initTagsInput() {
   });
 
   input.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" || e.key === ",") {
+    if ((e.key === "Enter" || e.key === ",") && !e.isComposing) {
       e.preventDefault();
       const val = input.value.trim();
       if (!val) return;
@@ -144,7 +146,6 @@ function renderField(f, value) {
       <div class="field-group">
         <label>${f.key}</label>
         <select data-key-extra="${f.key}">
-          <option value="">（不設定）</option>
           ${opts.map((o) => `<option value="${o}"${value === o ? " selected" : ""}>${o}</option>`).join("")}
         </select>
       </div>`;
@@ -213,6 +214,18 @@ async function autoSave() {
   }
 }
 
+async function refreshSchema() {
+  btnRefreshSchema.disabled = true;
+  btnRefreshSchema.textContent = "更新中...";
+  try {
+    schema = await fetch("/api/schema/refresh", { method: "POST" }).then((r) => r.json());
+    renderFields();
+  } finally {
+    btnRefreshSchema.disabled = false;
+    btnRefreshSchema.textContent = "更新欄位";
+  }
+}
+
 async function publish() {
   const body = getFormData();
   if (!body.title.trim()) { alert("請輸入標題"); return; }
@@ -230,9 +243,7 @@ async function publish() {
     const res = await fetch(`/api/drafts/${draftId}/publish`, { method: "POST" });
     const data = await res.json();
     if (data.success) {
-      alert(`PR 開好了！\n${data.pr_url}`);
       window.open(data.pr_url, "_blank");
-      window.location.href = "/";
     } else {
       alert(`送出失敗：${data.error}`);
     }

@@ -29,7 +29,21 @@ async function githubFetch(path: string, options: RequestInit = {}) {
   return res.json();
 }
 
-export async function getPostSchema(): Promise<unknown> {
+const DEFAULT_SCHEMA = {
+  version: 1,
+  fields: [
+    { key: "title", type: "string", required: true },
+    { key: "lang", type: "enum", options: ["zh-tw", "en"], required: true },
+    { key: "description", type: "string", required: false },
+    { key: "tags", type: "tags", required: false },
+    { key: "persona", type: "enum", options: ["表", "裏"], required: false },
+    { key: "nsfw", type: "boolean", default: false },
+  ],
+};
+
+let schemaCache: unknown = null;
+
+async function fetchPostSchema(): Promise<unknown> {
   try {
     const data = await githubFetch(
       `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/post-schema.json`
@@ -37,19 +51,23 @@ export async function getPostSchema(): Promise<unknown> {
     const content = Buffer.from(data.content, "base64").toString("utf-8");
     return JSON.parse(content);
   } catch {
-    // Return a default schema if file doesn't exist yet
-    return {
-      version: 1,
-      fields: [
-        { key: "title", type: "string", required: true },
-        { key: "lang", type: "enum", options: ["zh-tw", "en"], required: true },
-        { key: "description", type: "string", required: false },
-        { key: "tags", type: "tags", required: false },
-        { key: "persona", type: "enum", options: ["表", "裏"], required: false },
-        { key: "nsfw", type: "boolean", default: false },
-      ],
-    };
+    return DEFAULT_SCHEMA;
   }
+}
+
+export async function getPostSchema(): Promise<unknown> {
+  if (schemaCache) {
+    // Background refresh without blocking
+    fetchPostSchema().then((s) => { schemaCache = s; }).catch(() => {});
+    return schemaCache;
+  }
+  schemaCache = await fetchPostSchema();
+  return schemaCache;
+}
+
+export async function forceRefreshSchema(): Promise<unknown> {
+  schemaCache = await fetchPostSchema();
+  return schemaCache;
 }
 
 export async function openPR(params: {

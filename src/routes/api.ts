@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { nanoid } from "nanoid";
 import { db } from "../lib/db";
-import { getPostSchema, openPR } from "../lib/github";
+import { getPostSchema, forceRefreshSchema, openPR } from "../lib/github";
 
 type Draft = {
   id: string;
@@ -22,6 +22,12 @@ const api = new Hono();
 // GET /api/schema
 api.get("/schema", async (c) => {
   const schema = await getPostSchema();
+  return c.json(schema);
+});
+
+// POST /api/schema/refresh
+api.post("/schema/refresh", async (c) => {
+  const schema = await forceRefreshSchema();
   return c.json(schema);
 });
 
@@ -114,8 +120,6 @@ api.post("/drafts/:id/publish", async (c) => {
   const id = c.req.param("id");
   const draft = db.query("SELECT * FROM drafts WHERE id = ?").get(id) as Draft | null;
   if (!draft) return c.json({ error: "Not found" }, 404);
-  if (draft.status === "pr_opened") return c.json({ error: "PR already opened", pr_url: draft.pr_url }, 400);
-
   const fields = JSON.parse(draft.fields || "{}");
   const tags = JSON.parse(draft.tags || "[]");
   const date = new Date().toISOString().slice(0, 10);
@@ -135,7 +139,7 @@ api.post("/drafts/:id/publish", async (c) => {
     .map(([k, v]) => {
       if (Array.isArray(v)) return `${k}: [${v.map((x) => `"${x}"`).join(", ")}]`;
       if (typeof v === "boolean") return `${k}: ${v}`;
-      return `${k}: "${String(v).replace(/"/g, '\\"')}"`;
+      return `${k}: ${String(v)}`;
     })
     .join("\n") + "\n";
 
@@ -149,7 +153,7 @@ api.post("/drafts/:id/publish", async (c) => {
     });
 
     db.query(
-      "UPDATE drafts SET status = 'pr_opened', pr_url = ?, updated_at = ? WHERE id = ?"
+      "UPDATE drafts SET pr_url = ?, updated_at = ? WHERE id = ?"
     ).run(prUrl, new Date().toISOString(), id);
 
     return c.json({ success: true, pr_url: prUrl });

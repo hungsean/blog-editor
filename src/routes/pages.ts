@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { html } from "hono/html";
+import { html, raw } from "hono/html";
 
 const pages = new Hono();
 
@@ -56,6 +56,7 @@ function editorPage(id: string | null) {
       <a href="/" class="back-link">← 返回列表</a>
       <div class="header-actions">
         <span id="save-status" class="save-status"></span>
+        <button id="btn-refresh-schema" class="btn btn-secondary" title="重新從 GitHub 拉取欄位設定">更新欄位</button>
         <button id="btn-publish" class="btn btn-success">送出 PR</button>
       </div>
     </header>
@@ -68,7 +69,7 @@ function editorPage(id: string | null) {
   </div>
   <script src="https://unpkg.com/easymde/dist/easymde.min.js"></script>
   <script>
-    window.__DRAFT_ID__ = ${JSON.stringify(draftId)};
+    window.__DRAFT_ID__ = ${raw(JSON.stringify(draftId))};
   </script>
   <script src="/js/editor.js"></script>
 </body>

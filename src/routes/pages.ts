@@ -17,7 +17,7 @@ pages.get("/editor/:id", (c) => {
 
 function listPage() {
   return html`<!DOCTYPE html>
-<html lang="zh-TW">
+<html lang="zh-TW" data-color-mode="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -42,12 +42,11 @@ function listPage() {
 function editorPage(id: string | null) {
   const draftId = id ?? "";
   return html`<!DOCTYPE html>
-<html lang="zh-TW">
+<html lang="zh-TW" data-color-mode="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Blog Editor</title>
-  <link rel="stylesheet" href="https://unpkg.com/easymde/dist/easymde.min.css">
   <link rel="stylesheet" href="/css/style.css">
 </head>
 <body>
@@ -63,15 +62,15 @@ function editorPage(id: string | null) {
     <main>
       <div id="fields-form"></div>
       <div class="editor-wrap">
-        <textarea id="md-editor"></textarea>
+        <div id="md-editor"></div>
+        <div id="md-preview" class="markdown-body"></div>
       </div>
     </main>
   </div>
-  <script src="https://unpkg.com/easymde/dist/easymde.min.js"></script>
   <script>
     window.__DRAFT_ID__ = ${raw(JSON.stringify(draftId))};
   </script>
-  <script src="/js/editor.js"></script>
+  <script src="/js/editor.bundle.js"></script>
 </body>
 </html>`;
 }

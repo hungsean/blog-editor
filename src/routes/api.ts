@@ -153,7 +153,7 @@ api.post("/drafts/:id/publish", async (c) => {
     });
 
     db.query(
-      "UPDATE drafts SET pr_url = ?, updated_at = ? WHERE id = ?"
+      "UPDATE drafts SET status = 'pr_opened', pr_url = ?, updated_at = ? WHERE id = ?"
     ).run(prUrl, new Date().toISOString(), id);
 
     return c.json({ success: true, pr_url: prUrl });

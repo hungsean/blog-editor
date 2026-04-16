@@ -6,6 +6,16 @@ import { syntaxHighlighting, defaultHighlightStyle, indentOnInput, bracketMatchi
 import { closeBrackets, closeBracketsKeymap, autocompletion, completionKeymap } from '@codemirror/autocomplete'
 import { oneDark } from '@codemirror/theme-one-dark'
 import { marked } from 'marked'
+import { markedHighlight } from 'marked-highlight'
+import hljs from 'highlight.js'
+
+marked.use(markedHighlight({
+  langPrefix: 'hljs language-',
+  highlight(code, lang) {
+    const language = hljs.getLanguage(lang) ? lang : 'plaintext';
+    return hljs.highlight(code, { language }).value;
+  }
+}))
 
 let draftId = window.__DRAFT_ID__;
 let draft = null;
@@ -42,6 +52,7 @@ async function init() {
 
   renderFields();
   initEditor();
+  updatePublishButton();
 
   btnPublish.addEventListener("click", publish);
   btnRefreshSchema.addEventListener("click", refreshSchema);
@@ -320,13 +331,40 @@ async function publish() {
     const res = await fetch(`/api/drafts/${draftId}/publish`, { method: "POST" });
     const data = await res.json();
     if (data.success) {
+      draft.status = "pr_opened";
+      draft.pr_url = data.pr_url;
+      updatePublishButton();
       window.open(data.pr_url, "_blank");
     } else {
       alert(`送出失敗：${data.error}`);
+      btnPublish.disabled = false;
+      btnPublish.textContent = "送出 PR";
     }
-  } finally {
+  } catch (e) {
+    alert(`送出失敗：${e.message}`);
     btnPublish.disabled = false;
     btnPublish.textContent = "送出 PR";
+  }
+}
+
+function updatePublishButton() {
+  if (draft?.status === "pr_opened" && draft?.pr_url) {
+    btnPublish.disabled = false;
+    btnPublish.textContent = "重新送出 PR";
+    let prLinkEl = document.getElementById("pr-link");
+    if (!prLinkEl) {
+      prLinkEl = document.createElement("a");
+      prLinkEl.id = "pr-link";
+      prLinkEl.target = "_blank";
+      prLinkEl.style.cssText = "font-size:0.8rem;color:#22c55e;margin-left:0.5rem;";
+      btnPublish.parentNode.insertBefore(prLinkEl, btnPublish.nextSibling);
+    }
+    prLinkEl.href = draft.pr_url;
+    prLinkEl.textContent = "查看 PR →";
+  } else {
+    btnPublish.disabled = false;
+    btnPublish.textContent = "送出 PR";
+    document.getElementById("pr-link")?.remove();
   }
 }
 

@@ -37,3 +37,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 data/*.db
 data/*.db-shm
 data/*.db-wal
+
+# build artifacts
+public/js/editor.bundle.js

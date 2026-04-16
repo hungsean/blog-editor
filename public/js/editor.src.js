@@ -1,7 +1,28 @@
+import { EditorState, Prec } from '@codemirror/state'
+import { EditorView, keymap, drawSelection, highlightActiveLine } from '@codemirror/view'
+import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
+import { markdown, markdownLanguage } from '@codemirror/lang-markdown'
+import { syntaxHighlighting, defaultHighlightStyle, indentOnInput, bracketMatching } from '@codemirror/language'
+import { closeBrackets, closeBracketsKeymap, autocompletion, completionKeymap } from '@codemirror/autocomplete'
+import { oneDark } from '@codemirror/theme-one-dark'
+import { marked } from 'marked'
+import { markedHighlight } from 'marked-highlight'
+import hljs from 'highlight.js'
+
+marked.use(markedHighlight({
+  langPrefix: 'hljs language-',
+  highlight(code, lang) {
+    const language = hljs.getLanguage(lang) ? lang : 'plaintext';
+    return hljs.highlight(code, { language }).value;
+  }
+}))
+
 let draftId = window.__DRAFT_ID__;
 let draft = null;
 let schema = null;
-let easyMDE = null;
+let cmView = null;
+let previewEl = null;
+let mdContent = "";
 let saveTimer = null;
 let saving = false;
 
@@ -31,6 +52,7 @@ async function init() {
 
   renderFields();
   initEditor();
+  updatePublishButton();
 
   btnPublish.addEventListener("click", publish);
   btnRefreshSchema.addEventListener("click", refreshSchema);
@@ -50,7 +72,6 @@ function renderFields() {
     ${rows.join("")}
   `;
 
-  // Bind change events
   fieldsForm.querySelectorAll("input[data-key], select[data-key]").forEach((el) => {
     el.addEventListener("input", scheduleSave);
   });
@@ -99,7 +120,6 @@ function initTagsInput() {
 
   wrap.addEventListener("click", (e) => {
     if (e.target.classList.contains("tag-chip-remove")) {
-      const tag = e.target.dataset.tag;
       e.target.closest(".tag-chip").remove();
       scheduleSave();
     } else {
@@ -130,7 +150,7 @@ function getTags() {
 
 function renderField(f, value) {
   if (f.type === "boolean") {
-    const checked = value !== undefined ? value : (f.default ?? false);
+    const checked = value === undefined ? (f.default ?? false) : value;
     return `
       <div class="field-group">
         <label>${f.key}</label>
@@ -158,14 +178,83 @@ function renderField(f, value) {
 }
 
 function initEditor() {
-  easyMDE = new EasyMDE({
-    element: document.getElementById("md-editor"),
-    initialValue: draft.content ?? "",
-    spellChecker: false,
-    autosave: { enabled: false },
-    toolbar: ["bold", "italic", "heading", "|", "quote", "unordered-list", "ordered-list", "|", "link", "image", "code", "table", "|", "preview", "side-by-side", "fullscreen", "|", "guide"],
+  mdContent = draft.content ?? "";
+  previewEl = document.getElementById("md-preview");
+  renderPreview();
+
+  cmView = new EditorView({
+    parent: document.getElementById("md-editor"),
+    state: EditorState.create({
+      doc: mdContent,
+      extensions: [
+        history(),
+        drawSelection(),
+        highlightActiveLine(),
+        indentOnInput(),
+        bracketMatching(),
+        closeBrackets(),
+        autocompletion(),
+        syntaxHighlighting(defaultHighlightStyle, { fallback: true }),
+        markdown({ base: markdownLanguage, codeLanguages: [] }),
+        oneDark,
+        EditorView.lineWrapping,
+        Prec.high(keymap.of([{ key: "Enter", run: continueListOnEnter }])),
+        keymap.of([
+          ...closeBracketsKeymap,
+          ...defaultKeymap,
+          ...historyKeymap,
+          ...completionKeymap,
+          indentWithTab,
+        ]),
+        EditorView.updateListener.of((v) => {
+          if (v.docChanged) {
+            mdContent = v.state.doc.toString();
+            renderPreview();
+            scheduleSave();
+          }
+        }),
+      ],
+    }),
   });
-  easyMDE.codemirror.on("change", scheduleSave);
+}
+
+function renderPreview() {
+  if (!previewEl) return;
+  previewEl.innerHTML = marked.parse(mdContent || "");
+}
+
+function continueListOnEnter(view) {
+  const { state } = view;
+  const { from } = state.selection.main;
+  const line = state.doc.lineAt(from);
+  const text = line.text;
+
+  const m = text.match(/^(\s*)([-*+]\s+\[[ xX]\]\s+|[-*+]\s+|(\d+)\.\s+|>\s+)(.*)$/);
+  if (!m) return false;
+
+  const [, indent, marker, num, rest] = m;
+
+  if (rest.length === 0) {
+    view.dispatch({
+      changes: { from: line.from, to: line.to, insert: indent },
+      selection: { anchor: line.from + indent.length },
+    });
+    return true;
+  }
+
+  let nextMarker = marker;
+  if (num !== undefined) {
+    nextMarker = `${Number(num) + 1}. `;
+  } else if (/\[[ xX]\]/.test(marker)) {
+    nextMarker = marker.replace(/\[[xX]\]/, "[ ]");
+  }
+
+  const insert = `\n${indent}${nextMarker}`;
+  view.dispatch({
+    changes: { from, to: from, insert },
+    selection: { anchor: from + insert.length },
+  });
+  return true;
 }
 
 function getFormData() {
@@ -174,7 +263,7 @@ function getFormData() {
   const lang = get('[data-key="lang"]')?.value ?? "zh-tw";
   const description = get('[data-key="description"]')?.value ?? "";
   const tags = JSON.stringify(getTags());
-  const content = easyMDE ? easyMDE.value() : "";
+  const content = mdContent;
 
   const fields = {};
   document.querySelectorAll("[data-key-extra]").forEach((el) => {
@@ -230,7 +319,6 @@ async function publish() {
   const body = getFormData();
   if (!body.title.trim()) { alert("請輸入標題"); return; }
 
-  // Force save first
   clearTimeout(saveTimer);
   await autoSave();
 
@@ -243,22 +331,49 @@ async function publish() {
     const res = await fetch(`/api/drafts/${draftId}/publish`, { method: "POST" });
     const data = await res.json();
     if (data.success) {
+      draft.status = "pr_opened";
+      draft.pr_url = data.pr_url;
+      updatePublishButton();
       window.open(data.pr_url, "_blank");
     } else {
       alert(`送出失敗：${data.error}`);
+      btnPublish.disabled = false;
+      btnPublish.textContent = "送出 PR";
     }
-  } finally {
+  } catch (e) {
+    alert(`送出失敗：${e.message}`);
     btnPublish.disabled = false;
     btnPublish.textContent = "送出 PR";
   }
 }
 
+function updatePublishButton() {
+  if (draft?.status === "pr_opened" && draft?.pr_url) {
+    btnPublish.disabled = false;
+    btnPublish.textContent = "重新送出 PR";
+    let prLinkEl = document.getElementById("pr-link");
+    if (!prLinkEl) {
+      prLinkEl = document.createElement("a");
+      prLinkEl.id = "pr-link";
+      prLinkEl.target = "_blank";
+      prLinkEl.style.cssText = "font-size:0.8rem;color:#22c55e;margin-left:0.5rem;";
+      btnPublish.parentNode.insertBefore(prLinkEl, btnPublish.nextSibling);
+    }
+    prLinkEl.href = draft.pr_url;
+    prLinkEl.textContent = "查看 PR →";
+  } else {
+    btnPublish.disabled = false;
+    btnPublish.textContent = "送出 PR";
+    document.getElementById("pr-link")?.remove();
+  }
+}
+
 function escHtml(s) {
-  return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  return String(s).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
 
 function escAttr(s) {
-  return String(s).replace(/"/g, "&quot;").replace(/</g, "&lt;");
+  return String(s).replaceAll('"', "&quot;").replaceAll("<", "&lt;");
 }
 
 function parseHTML(html) {

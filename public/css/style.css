@@ -228,22 +228,115 @@ input[type="checkbox"] {
   cursor: pointer;
 }
 
-/* EasyMDE overrides */
-.editor-wrap { border-radius: var(--radius); overflow: hidden; }
-.EasyMDEContainer .CodeMirror {
-  background: var(--surface) !important;
-  color: var(--text) !important;
-  border-color: var(--border) !important;
-  height: calc(100vh - 280px) !important;
+/* CodeMirror 6 + Markdown preview split */
+.editor-wrap {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1px;
+  background: var(--border);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  height: calc(100vh - 280px);
   min-height: 300px;
 }
-.editor-toolbar {
-  background: var(--surface) !important;
-  border-color: var(--border) !important;
+
+#md-editor { overflow: hidden; background: var(--surface); }
+#md-editor .cm-editor { height: 100%; font-size: 14px; }
+#md-editor .cm-editor.cm-focused { outline: none; }
+#md-editor .cm-scroller { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+
+#md-preview {
+  overflow-y: auto;
+  padding: 16px 20px;
+  background: var(--surface);
+  color: var(--text);
+  line-height: 1.6;
 }
-.editor-toolbar button { color: var(--text-muted) !important; }
-.editor-toolbar button:hover, .editor-toolbar button.active { color: var(--text) !important; background: var(--surface2) !important; }
-.editor-toolbar i.separator { border-color: var(--border) !important; }
-.CodeMirror-cursor { border-color: var(--text) !important; }
+
+#md-preview h1, #md-preview h2, #md-preview h3 {
+  margin: 1em 0 0.5em;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.3em;
+}
+#md-preview h1:first-child { margin-top: 0; }
+#md-preview p { margin: 0.5em 0; }
+#md-preview code {
+  background: var(--surface2);
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.9em;
+}
+#md-preview pre {
+  background: var(--surface2);
+  padding: 12px;
+  border-radius: var(--radius);
+  overflow-x: auto;
+  margin: 1em 0;
+}
+#md-preview pre code { background: transparent; padding: 0; }
+#md-preview blockquote {
+  border-left: 3px solid var(--primary);
+  padding-left: 12px;
+  color: var(--text-muted);
+  margin: 0.5em 0;
+}
+#md-preview a { color: var(--primary); }
+#md-preview ul, #md-preview ol { padding-left: 1.5em; }
+#md-preview img { max-width: 100%; }
+#md-preview table {
+  border-collapse: collapse;
+  width: 100%;
+}
+#md-preview th, #md-preview td {
+  border: 1px solid var(--border);
+  padding: 6px 10px;
+}
+#md-preview tr:nth-child(odd) td {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+/* highlight.js - atom-one-dark theme */
+#md-preview .hljs { color: #abb2bf; }
+#md-preview .hljs-comment,
+#md-preview .hljs-quote { color: #5c6370; font-style: italic; }
+#md-preview .hljs-doctag,
+#md-preview .hljs-keyword,
+#md-preview .hljs-formula { color: #c678dd; }
+#md-preview .hljs-section,
+#md-preview .hljs-name,
+#md-preview .hljs-selector-tag,
+#md-preview .hljs-deletion,
+#md-preview .hljs-subst { color: #e06c75; }
+#md-preview .hljs-literal { color: #56b6c2; }
+#md-preview .hljs-string,
+#md-preview .hljs-regexp,
+#md-preview .hljs-addition,
+#md-preview .hljs-attribute,
+#md-preview .hljs-meta .hljs-string { color: #98c379; }
+#md-preview .hljs-attr,
+#md-preview .hljs-variable,
+#md-preview .hljs-template-variable,
+#md-preview .hljs-type,
+#md-preview .hljs-selector-class,
+#md-preview .hljs-selector-attr,
+#md-preview .hljs-selector-pseudo,
+#md-preview .hljs-number { color: #d19a66; }
+#md-preview .hljs-symbol,
+#md-preview .hljs-bullet,
+#md-preview .hljs-link,
+#md-preview .hljs-meta,
+#md-preview .hljs-selector-id,
+#md-preview .hljs-title { color: #61aeee; }
+#md-preview .hljs-built_in,
+#md-preview .hljs-title.class_,
+#md-preview .hljs-class .hljs-title { color: #e6c07b; }
+#md-preview .hljs-emphasis { font-style: italic; }
+#md-preview .hljs-strong { font-weight: bold; }
+#md-preview .hljs-link { text-decoration: underline; }
+
+@media (max-width: 900px) {
+  .editor-wrap { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
+}
 
 .loading { color: var(--text-muted); text-align: center; padding: 40px; }

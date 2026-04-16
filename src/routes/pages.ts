@@ -28,12 +28,33 @@ function listPage() {
   <div class="container">
     <header>
       <h1>Blog Editor</h1>
-      <button id="btn-new" class="btn btn-primary">+ 新增文章</button>
+      <div class="header-actions">
+        <button id="btn-sync" class="btn btn-secondary">↓ 從 GitHub 同步</button>
+        <button id="btn-new" class="btn btn-primary">+ 新增文章</button>
+      </div>
     </header>
     <main id="drafts-list">
       <p class="loading">載入中...</p>
     </main>
   </div>
+
+  <!-- Sync Modal -->
+  <div id="sync-modal" class="modal-overlay" style="display:none">
+    <div class="modal">
+      <div class="modal-header">
+        <h2>從 GitHub 同步文章</h2>
+        <button id="sync-modal-close" class="btn btn-secondary">✕</button>
+      </div>
+      <div id="sync-modal-body" class="modal-body">
+        <p class="loading">載入 GitHub 文章中...</p>
+      </div>
+      <div class="modal-footer">
+        <button id="sync-modal-cancel" class="btn btn-secondary">取消</button>
+        <button id="sync-modal-confirm" class="btn btn-primary" disabled>同步選取</button>
+      </div>
+    </div>
+  </div>
+
   <script src="/js/list.js"></script>
 </body>
 </html>`;

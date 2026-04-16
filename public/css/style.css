@@ -100,6 +100,69 @@ h1 { font-size: 1.5rem; font-weight: 700; }
 }
 .badge-draft { background: var(--surface2); color: var(--text-muted); }
 .badge-pr { background: #1a3a1a; color: var(--success); }
+.badge-github { background: #1a1f3a; color: #818cf8; }
+
+/* Modal */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.modal {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  width: min(640px, 95vw);
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+}
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+}
+.modal-header h2 { font-size: 1.1rem; }
+.modal-body {
+  padding: 16px 20px;
+  overflow-y: auto;
+  flex: 1;
+}
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 12px 20px;
+  border-top: 1px solid var(--border);
+}
+.sync-select-all-wrap {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+.sync-list { display: flex; flex-direction: column; gap: 6px; }
+.sync-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  border: 1px solid transparent;
+}
+.sync-row:hover { background: var(--surface2); border-color: var(--border); }
+.sync-path { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.sync-filename { font-size: 0.875rem; font-weight: 500; }
+.sync-fullpath { font-size: 0.72rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 .draft-actions { display: flex; gap: 8px; }
 

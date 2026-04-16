@@ -53,6 +53,7 @@ async function init() {
   renderFields();
   initEditor();
   updatePublishButton();
+  renderGithubSourceInfo();
 
   btnPublish.addEventListener("click", publish);
   btnRefreshSchema.addEventListener("click", refreshSchema);
@@ -345,6 +346,47 @@ async function publish() {
     btnPublish.disabled = false;
     btnPublish.textContent = "送出 PR";
   }
+}
+
+function renderGithubSourceInfo() {
+  const existing = document.getElementById("github-source-info");
+  existing?.remove();
+  if (!draft?.github_path) return;
+
+  const info = document.createElement("div");
+  info.id = "github-source-info";
+  info.style.cssText = "margin-bottom:0.75rem;padding:0.5rem 0.75rem;background:#1a2a1a;border:1px solid #2a4a2a;border-radius:6px;font-size:0.8rem;color:#86efac;display:flex;align-items:center;gap:0.75rem;";
+  info.innerHTML = `
+    <span>GitHub 來源: <code style="background:#0d1a0d;padding:0.1rem 0.3rem;border-radius:3px">${escHtml(draft.github_path)}</code></span>
+    <button id="btn-resync" class="btn btn-secondary" style="font-size:0.75rem;padding:0.2rem 0.6rem;margin-left:auto">重新同步</button>
+  `;
+  fieldsForm.parentNode.insertBefore(info, fieldsForm);
+
+  document.getElementById("btn-resync").addEventListener("click", async () => {
+    if (!confirm("確定要從 GitHub 重新同步？本地的修改將被覆蓋。")) return;
+    const btn = document.getElementById("btn-resync");
+    btn.disabled = true;
+    btn.textContent = "同步中...";
+    try {
+      const res = await fetch(`/api/drafts/${draftId}/resync`, { method: "POST" });
+      if (res.ok) {
+        draft = await res.json();
+        renderFields();
+        cmView.dispatch({ changes: { from: 0, to: cmView.state.doc.length, insert: draft.content ?? "" } });
+        mdContent = draft.content ?? "";
+        renderPreview();
+        renderGithubSourceInfo();
+      } else {
+        const data = await res.json();
+        alert(`同步失敗：${data.error}`);
+      }
+    } catch (e) {
+      alert(`同步失敗：${e.message}`);
+    } finally {
+      const b = document.getElementById("btn-resync");
+      if (b) { b.disabled = false; b.textContent = "重新同步"; }
+    }
+  });
 }
 
 function updatePublishButton() {

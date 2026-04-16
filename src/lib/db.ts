@@ -24,3 +24,16 @@ db.exec(`
     updated_at  TEXT NOT NULL
   )
 `);
+
+// Migrations: add new columns if they don't exist
+for (const [col, def] of [
+  ["github_path", "TEXT DEFAULT ''"],
+  ["github_sha",  "TEXT DEFAULT ''"],
+  ["source",      "TEXT DEFAULT 'local'"],
+] as const) {
+  try {
+    db.exec(`ALTER TABLE drafts ADD COLUMN ${col} ${def}`);
+  } catch {
+    // Column already exists, ignore
+  }
+}

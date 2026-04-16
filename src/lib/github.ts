@@ -70,17 +70,57 @@ export async function forceRefreshSchema(): Promise<unknown> {
   return schemaCache;
 }
 
+export interface GithubPost {
+  path: string;
+  sha: string;
+}
+
+/**
+ * List all .md files under src/content/blog/ using the Git Tree API.
+ */
+export async function listGithubPosts(): Promise<GithubPost[]> {
+  // Get the HEAD tree SHA
+  const branch = await githubFetch(
+    `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/branches/${GITHUB_DEFAULT_BRANCH}`
+  ) as { commit: { commit: { tree: { sha: string } } } };
+  const treeSha = branch.commit.commit.tree.sha;
+
+  // Recursively fetch the entire tree
+  const tree = await githubFetch(
+    `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/git/trees/${treeSha}?recursive=1`
+  ) as { tree: Array<{ path: string; sha: string; type: string }> };
+
+  return tree.tree
+    .filter((item) => item.type === "blob" && item.path.startsWith("src/content/blog/") && item.path.endsWith(".md"))
+    .map(({ path, sha }) => ({ path, sha }));
+}
+
+/**
+ * Fetch a single file's content (decoded) and its SHA.
+ */
+export async function getGithubFile(path: string): Promise<{ content: string; sha: string }> {
+  const data = await githubFetch(
+    `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${path}`
+  ) as { content: string; sha: string };
+  const content = Buffer.from(data.content, "base64").toString("utf-8");
+  return { content, sha: data.sha };
+}
+
 export async function openPR(params: {
   title: string;
   slug: string;
   date: string;
   frontmatter: string;
   content: string;
-}): Promise<{ prUrl: string }> {
-  const { title, slug, date, frontmatter, content } = params;
+  /** If set, update this existing file instead of creating a new one */
+  githubPath?: string;
+  /** Required when githubPath is set — the current file SHA */
+  githubSha?: string;
+}): Promise<{ prUrl: string; filePath: string }> {
+  const { title, slug, date, frontmatter, content, githubPath, githubSha } = params;
   const [year, monthDay] = [date.slice(0, 4), date.slice(5, 10)];
   const branch = `blog/${date}-${slug}`;
-  const filePath = `src/content/blog/${year}/${monthDay}/${slug}.md`;
+  const filePath = githubPath ?? `src/content/blog/${year}/${monthDay}/${slug}.md`;
   const fileContent = `---\n${frontmatter}---\n\n${content}`;
 
   // Get base SHA
@@ -98,16 +138,19 @@ export async function openPR(params: {
     }),
   });
 
-  // Create file
+  // Create or update file
+  const putBody: Record<string, unknown> = {
+    message: githubPath ? `feat: update post "${title}"` : `feat: add post "${title}"`,
+    content: Buffer.from(fileContent).toString("base64"),
+    branch,
+  };
+  if (githubSha) putBody.sha = githubSha;
+
   await githubFetch(
     `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${filePath}`,
     {
       method: "PUT",
-      body: JSON.stringify({
-        message: `feat: add post "${title}"`,
-        content: Buffer.from(fileContent).toString("base64"),
-        branch,
-      }),
+      body: JSON.stringify(putBody),
     }
   );
 
@@ -118,9 +161,11 @@ export async function openPR(params: {
       title: `[Post] ${title}`,
       head: branch,
       base: GITHUB_DEFAULT_BRANCH,
-      body: `New blog post: **${title}**`,
+      body: githubPath
+        ? `Updated blog post: **${title}**`
+        : `New blog post: **${title}**`,
     }),
   }) as { html_url: string };
 
-  return { prUrl: pr.html_url };
+  return { prUrl: pr.html_url, filePath };
 }

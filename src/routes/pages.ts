@@ -76,7 +76,6 @@ function editorPage(id: string | null) {
       <a href="/" class="back-link">← 返回列表</a>
       <div class="header-actions">
         <span id="save-status" class="save-status"></span>
-        <button id="btn-refresh-schema" class="btn btn-secondary" title="重新從 GitHub 拉取欄位設定">更新欄位</button>
         <button id="btn-publish" class="btn btn-success">送出 PR</button>
       </div>
     </header>

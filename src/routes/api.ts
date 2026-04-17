@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { nanoid } from "nanoid";
 import { db } from "../lib/db";
-import { getPostSchema, forceRefreshSchema, openPR, listGithubPosts, getGithubFile } from "../lib/github";
+import { openPR, listGithubPosts, getGithubFile } from "../lib/github";
 import { parseFrontmatter, frontmatterToDraft } from "../lib/frontmatter";
 
 type Draft = {
@@ -22,18 +22,6 @@ type Draft = {
 };
 
 const api = new Hono();
-
-// GET /api/schema
-api.get("/schema", async (c) => {
-  const schema = await getPostSchema();
-  return c.json(schema);
-});
-
-// POST /api/schema/refresh
-api.post("/schema/refresh", async (c) => {
-  const schema = await forceRefreshSchema();
-  return c.json(schema);
-});
 
 // GET /api/drafts
 api.get("/drafts", (c) => {

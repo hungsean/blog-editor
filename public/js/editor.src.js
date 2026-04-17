@@ -17,9 +17,15 @@ marked.use(markedHighlight({
   }
 }))
 
-let draftId = window.__DRAFT_ID__;
+// Hardcoded extra fields (everything except title / lang / description / tags)
+const EXTRA_FIELDS = [
+  { key: "pubDate", type: "date", required: true },
+  { key: "persona", type: "enum", options: ["", "表", "裏"], required: false },
+  { key: "nsfw", type: "boolean", default: false },
+];
+
+let draftId = globalThis.__DRAFT_ID__;
 let draft = null;
-let schema = null;
 let cmView = null;
 let previewEl = null;
 let mdContent = "";
@@ -28,16 +34,12 @@ let saving = false;
 
 const saveStatus = document.getElementById("save-status");
 const btnPublish = document.getElementById("btn-publish");
-const btnRefreshSchema = document.getElementById("btn-refresh-schema");
 const fieldsForm = document.getElementById("fields-form");
 
 async function init() {
-  [schema, draft] = await Promise.all([
-    fetch("/api/schema").then((r) => r.json()),
-    draftId
-      ? fetch(`/api/drafts/${draftId}`).then((r) => r.json())
-      : Promise.resolve(null),
-  ]);
+  draft = draftId
+    ? await fetch(`/api/drafts/${draftId}`).then((r) => r.json())
+    : null;
 
   if (!draftId || !draft || draft.error) {
     const res = await fetch("/api/drafts", {
@@ -56,14 +58,11 @@ async function init() {
   renderGithubSourceInfo();
 
   btnPublish.addEventListener("click", publish);
-  btnRefreshSchema.addEventListener("click", refreshSchema);
 }
 
 function renderFields() {
   const extraFields = JSON.parse(draft.fields || "{}");
-  const rows = schema.fields
-    .filter((f) => !["title", "lang", "description", "tags"].includes(f.key))
-    .map((f) => renderField(f, extraFields[f.key]));
+  const rows = EXTRA_FIELDS.map((f) => renderField(f, extraFields[f.key]));
 
   fieldsForm.innerHTML = `
     ${renderTextField({ key: "title", label: "標題", required: true }, draft.title)}
@@ -88,8 +87,7 @@ function renderTextField({ key, label, required }, value = "") {
 }
 
 function renderLangField(value) {
-  const schema_ = schema.fields.find((f) => f.key === "lang");
-  const opts = schema_?.options ?? ["zh-tw", "en"];
+  const opts = ["zh-tw", "en"];
   return `
     <div class="field-group">
       <label>語言</label>
@@ -169,6 +167,15 @@ function renderField(f, value) {
         <select data-key-extra="${f.key}">
           ${opts.map((o) => `<option value="${o}"${value === o ? " selected" : ""}>${o}</option>`).join("")}
         </select>
+      </div>`;
+  }
+  if (f.type === "date") {
+    // Normalize to YYYY-MM-DD for <input type="date">
+    const dateVal = value ? String(value).slice(0, 10) : new Date().toISOString().slice(0, 10);
+    return `
+      <div class="field-group">
+        <label>${f.key}${f.required ? " *" : ""}</label>
+        <input type="date" data-key-extra="${f.key}" value="${escAttr(dateVal)}">
       </div>`;
   }
   return `
@@ -266,11 +273,13 @@ function getFormData() {
   const tags = JSON.stringify(getTags());
   const content = mdContent;
 
-  const fields = {};
+  // Start from existing fields to preserve keys not rendered in schema (e.g. pubDate)
+  const fields = { ...(JSON.parse(draft.fields || "{}")) };
   document.querySelectorAll("[data-key-extra]").forEach((el) => {
     const key = el.dataset.keyExtra;
     if (el.type === "checkbox") fields[key] = el.checked;
     else if (el.value !== "") fields[key] = el.value;
+    else delete fields[key];
   });
 
   return { title, lang, description, tags, fields: JSON.stringify(fields), content };
@@ -301,18 +310,6 @@ async function autoSave() {
     }
   } finally {
     saving = false;
-  }
-}
-
-async function refreshSchema() {
-  btnRefreshSchema.disabled = true;
-  btnRefreshSchema.textContent = "更新中...";
-  try {
-    schema = await fetch("/api/schema/refresh", { method: "POST" }).then((r) => r.json());
-    renderFields();
-  } finally {
-    btnRefreshSchema.disabled = false;
-    btnRefreshSchema.textContent = "更新欄位";
   }
 }
 

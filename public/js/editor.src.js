@@ -8,6 +8,7 @@ import { oneDark } from '@codemirror/theme-one-dark'
 import { marked } from 'marked'
 import { markedHighlight } from 'marked-highlight'
 import hljs from 'highlight.js'
+import flatpickr from 'flatpickr'
 
 marked.use(markedHighlight({
   langPrefix: 'hljs language-',
@@ -35,6 +36,14 @@ let saving = false;
 const saveStatus = document.getElementById("save-status");
 const btnPublish = document.getElementById("btn-publish");
 const fieldsForm = document.getElementById("fields-form");
+const fieldsPanel = document.getElementById("fields-panel");
+const fieldsToggle = document.getElementById("fields-toggle");
+
+fieldsToggle?.addEventListener("click", () => {
+  const collapsed = fieldsPanel.dataset.collapsed === "true";
+  fieldsPanel.dataset.collapsed = collapsed ? "false" : "true";
+  fieldsToggle.setAttribute("aria-expanded", collapsed ? "true" : "false");
+});
 
 async function init() {
   draft = draftId
@@ -76,6 +85,7 @@ function renderFields() {
     el.addEventListener("input", scheduleSave);
   });
   initTagsInput();
+  initDatePickers();
 }
 
 function renderTextField({ key, label, required }, value = "") {
@@ -141,6 +151,17 @@ function initTagsInput() {
   });
 }
 
+function initDatePickers() {
+  document.querySelectorAll(".flatpickr-date").forEach((el) => {
+    flatpickr(el, {
+      dateFormat: "Y-m-d",
+      allowInput: false,
+      disableMobile: true,
+      onChange: () => scheduleSave(),
+    });
+  });
+}
+
 function getTags() {
   return [...document.querySelectorAll("#tags-wrap .tag-chip")].map((el) =>
     el.childNodes[0].textContent.trim()
@@ -170,12 +191,11 @@ function renderField(f, value) {
       </div>`;
   }
   if (f.type === "date") {
-    // Normalize to YYYY-MM-DD for <input type="date">
     const dateVal = value ? String(value).slice(0, 10) : new Date().toISOString().slice(0, 10);
     return `
       <div class="field-group">
         <label>${f.key}${f.required ? " *" : ""}</label>
-        <input type="date" data-key-extra="${f.key}" value="${escAttr(dateVal)}">
+        <input type="text" class="flatpickr-date" data-key-extra="${f.key}" value="${escAttr(dateVal)}" readonly>
       </div>`;
   }
   return `
@@ -224,6 +244,7 @@ function initEditor() {
       ],
     }),
   });
+
 }
 
 function renderPreview() {

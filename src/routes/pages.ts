@@ -68,10 +68,11 @@ function editorPage(id: string | null) {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Blog Editor</title>
+  <link rel="stylesheet" href="/css/flatpickr.min.css">
   <link rel="stylesheet" href="/css/style.css">
 </head>
-<body>
-  <div class="container editor-container">
+<body class="editor-page">
+  <div class="editor-container">
     <header>
       <a href="/" class="back-link">← 返回列表</a>
       <div class="header-actions">
@@ -80,7 +81,15 @@ function editorPage(id: string | null) {
       </div>
     </header>
     <main>
-      <div id="fields-form"></div>
+      <div id="fields-panel" class="fields-panel">
+        <button id="fields-toggle" class="fields-toggle" aria-expanded="true">
+          <span class="fields-toggle-label">文章設定</span>
+          <svg class="fields-toggle-icon" width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M4 6l4 4 4-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
+        <div id="fields-form" class="fields-form-body"></div>
+      </div>
       <div class="editor-wrap">
         <div id="md-editor"></div>
         <div id="md-preview" class="markdown-body"></div>
@@ -88,7 +97,7 @@ function editorPage(id: string | null) {
     </main>
   </div>
   <script>
-    window.__DRAFT_ID__ = ${raw(JSON.stringify(draftId))};
+    globalThis.__DRAFT_ID__ = ${raw(JSON.stringify(draftId))};
   </script>
   <script src="/js/editor.bundle.js"></script>
 </body>

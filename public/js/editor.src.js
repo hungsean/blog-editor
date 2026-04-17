@@ -8,6 +8,7 @@ import { oneDark } from '@codemirror/theme-one-dark'
 import { marked } from 'marked'
 import { markedHighlight } from 'marked-highlight'
 import hljs from 'highlight.js'
+import flatpickr from 'flatpickr'
 
 marked.use(markedHighlight({
   langPrefix: 'hljs language-',
@@ -17,9 +18,15 @@ marked.use(markedHighlight({
   }
 }))
 
-let draftId = window.__DRAFT_ID__;
+// Hardcoded extra fields (everything except title / lang / description / tags)
+const EXTRA_FIELDS = [
+  { key: "pubDate", type: "date", required: true },
+  { key: "persona", type: "enum", options: ["", "表", "裏"], required: false },
+  { key: "nsfw", type: "boolean", default: false },
+];
+
+let draftId = globalThis.__DRAFT_ID__;
 let draft = null;
-let schema = null;
 let cmView = null;
 let previewEl = null;
 let mdContent = "";
@@ -28,16 +35,20 @@ let saving = false;
 
 const saveStatus = document.getElementById("save-status");
 const btnPublish = document.getElementById("btn-publish");
-const btnRefreshSchema = document.getElementById("btn-refresh-schema");
 const fieldsForm = document.getElementById("fields-form");
+const fieldsPanel = document.getElementById("fields-panel");
+const fieldsToggle = document.getElementById("fields-toggle");
+
+fieldsToggle?.addEventListener("click", () => {
+  const collapsed = fieldsPanel.dataset.collapsed === "true";
+  fieldsPanel.dataset.collapsed = collapsed ? "false" : "true";
+  fieldsToggle.setAttribute("aria-expanded", collapsed ? "true" : "false");
+});
 
 async function init() {
-  [schema, draft] = await Promise.all([
-    fetch("/api/schema").then((r) => r.json()),
-    draftId
-      ? fetch(`/api/drafts/${draftId}`).then((r) => r.json())
-      : Promise.resolve(null),
-  ]);
+  draft = draftId
+    ? await fetch(`/api/drafts/${draftId}`).then((r) => r.json())
+    : null;
 
   if (!draftId || !draft || draft.error) {
     const res = await fetch("/api/drafts", {
@@ -53,16 +64,14 @@ async function init() {
   renderFields();
   initEditor();
   updatePublishButton();
+  renderGithubSourceInfo();
 
   btnPublish.addEventListener("click", publish);
-  btnRefreshSchema.addEventListener("click", refreshSchema);
 }
 
 function renderFields() {
   const extraFields = JSON.parse(draft.fields || "{}");
-  const rows = schema.fields
-    .filter((f) => !["title", "lang", "description", "tags"].includes(f.key))
-    .map((f) => renderField(f, extraFields[f.key]));
+  const rows = EXTRA_FIELDS.map((f) => renderField(f, extraFields[f.key]));
 
   fieldsForm.innerHTML = `
     ${renderTextField({ key: "title", label: "標題", required: true }, draft.title)}
@@ -76,6 +85,7 @@ function renderFields() {
     el.addEventListener("input", scheduleSave);
   });
   initTagsInput();
+  initDatePickers();
 }
 
 function renderTextField({ key, label, required }, value = "") {
@@ -87,8 +97,7 @@ function renderTextField({ key, label, required }, value = "") {
 }
 
 function renderLangField(value) {
-  const schema_ = schema.fields.find((f) => f.key === "lang");
-  const opts = schema_?.options ?? ["zh-tw", "en"];
+  const opts = ["zh-tw", "en"];
   return `
     <div class="field-group">
       <label>語言</label>
@@ -142,6 +151,17 @@ function initTagsInput() {
   });
 }
 
+function initDatePickers() {
+  document.querySelectorAll(".flatpickr-date").forEach((el) => {
+    flatpickr(el, {
+      dateFormat: "Y-m-d",
+      allowInput: false,
+      disableMobile: true,
+      onChange: () => scheduleSave(),
+    });
+  });
+}
+
 function getTags() {
   return [...document.querySelectorAll("#tags-wrap .tag-chip")].map((el) =>
     el.childNodes[0].textContent.trim()
@@ -168,6 +188,14 @@ function renderField(f, value) {
         <select data-key-extra="${f.key}">
           ${opts.map((o) => `<option value="${o}"${value === o ? " selected" : ""}>${o}</option>`).join("")}
         </select>
+      </div>`;
+  }
+  if (f.type === "date") {
+    const dateVal = value ? String(value).slice(0, 10) : new Date().toISOString().slice(0, 10);
+    return `
+      <div class="field-group">
+        <label>${f.key}${f.required ? " *" : ""}</label>
+        <input type="text" class="flatpickr-date" data-key-extra="${f.key}" value="${escAttr(dateVal)}" readonly>
       </div>`;
   }
   return `
@@ -216,11 +244,133 @@ function initEditor() {
       ],
     }),
   });
+
+  initScrollSync();
 }
 
 function renderPreview() {
   if (!previewEl) return;
-  previewEl.innerHTML = marked.parse(mdContent || "");
+
+  const md = mdContent || "";
+  const tokens = marked.lexer(md);
+  const BLOCK_TYPES = new Set(["heading", "paragraph", "code", "blockquote", "list", "hr", "table", "html"]);
+  const blockLineNumbers = [];
+  let line = 1;
+
+  for (const token of tokens) {
+    if (BLOCK_TYPES.has(token.type)) blockLineNumbers.push(line);
+    line += (token.raw.match(/\n/g) || []).length;
+  }
+
+  previewEl.innerHTML = marked.parse(md);
+
+  const blockEls = previewEl.querySelectorAll(
+    ":scope > h1, :scope > h2, :scope > h3, :scope > h4, :scope > h5, :scope > h6, " +
+    ":scope > p, :scope > pre, :scope > blockquote, :scope > ul, :scope > ol, " +
+    ":scope > hr, :scope > table, :scope > div"
+  );
+  blockEls.forEach((el, i) => {
+    if (i < blockLineNumbers.length) el.dataset.sourceLine = blockLineNumbers[i];
+  });
+}
+
+// ── Scroll sync ──────────────────────────────────────────────────────────────
+
+let scrollSyncSource = null;
+let scrollSyncTimer = null;
+
+function initScrollSync() {
+  cmView.scrollDOM.addEventListener("scroll", () => {
+    if (scrollSyncSource === "preview") return;
+    scrollSyncSource = "editor";
+    clearTimeout(scrollSyncTimer);
+    syncPreviewFromEditor();
+    scrollSyncTimer = setTimeout(() => { scrollSyncSource = null; }, 100);
+  }, { passive: true });
+
+  previewEl.addEventListener("scroll", () => {
+    if (scrollSyncSource === "editor") return;
+    scrollSyncSource = "preview";
+    clearTimeout(scrollSyncTimer);
+    syncEditorFromPreview();
+    scrollSyncTimer = setTimeout(() => { scrollSyncSource = null; }, 100);
+  }, { passive: true });
+}
+
+function getPreviewAnchors() {
+  return [...previewEl.querySelectorAll("[data-source-line]")]
+    .map(el => ({ el, line: parseInt(el.dataset.sourceLine, 10) }))
+    .filter(a => !isNaN(a.line));
+}
+
+function syncPreviewFromEditor() {
+  const scrollDOM = cmView.scrollDOM;
+  const scrollTop = scrollDOM.scrollTop;
+  const scrollMax = scrollDOM.scrollHeight - scrollDOM.clientHeight;
+  if (scrollMax <= 0) return;
+
+  const topBlock = cmView.lineBlockAtHeight(scrollTop);
+  const topLine = cmView.state.doc.lineAt(topBlock.from).number;
+  const totalLines = cmView.state.doc.lines;
+  const anchors = getPreviewAnchors();
+
+  if (!anchors.length) {
+    previewEl.scrollTop = (scrollTop / scrollMax) * (previewEl.scrollHeight - previewEl.clientHeight);
+    return;
+  }
+
+  let before = null, after = null;
+  for (const a of anchors) {
+    if (a.line <= topLine) before = a;
+    else if (!after) after = a;
+  }
+
+  if (!before) { previewEl.scrollTop = 0; return; }
+
+  if (!after) {
+    previewEl.scrollTop = (scrollTop / scrollMax) * (previewEl.scrollHeight - previewEl.clientHeight);
+    return;
+  }
+
+  const eBefore = cmView.lineBlockAt(cmView.state.doc.line(before.line).from).top;
+  const eAfter  = cmView.lineBlockAt(cmView.state.doc.line(Math.min(after.line, totalLines)).from).top;
+  const frac = eAfter > eBefore ? Math.max(0, Math.min(1, (scrollTop - eBefore) / (eAfter - eBefore))) : 0;
+  previewEl.scrollTop = before.el.offsetTop + frac * (after.el.offsetTop - before.el.offsetTop);
+}
+
+function syncEditorFromPreview() {
+  const scrollTop = previewEl.scrollTop;
+  const scrollMax = previewEl.scrollHeight - previewEl.clientHeight;
+  if (scrollMax <= 0) return;
+
+  const anchors = getPreviewAnchors();
+
+  if (!anchors.length) {
+    cmView.scrollDOM.scrollTop = (scrollTop / scrollMax) * (cmView.scrollDOM.scrollHeight - cmView.scrollDOM.clientHeight);
+    return;
+  }
+
+  let before = null, after = null;
+  for (const a of anchors) {
+    const top = a.el.offsetTop;
+    if (top <= scrollTop) before = { ...a, offsetTop: top };
+    else if (!after) after = { ...a, offsetTop: top };
+  }
+
+  if (!before) { cmView.scrollDOM.scrollTop = 0; return; }
+
+  if (!after) {
+    cmView.scrollDOM.scrollTop = (scrollTop / scrollMax) * (cmView.scrollDOM.scrollHeight - cmView.scrollDOM.clientHeight);
+    return;
+  }
+
+  const totalLines = cmView.state.doc.lines;
+  const frac = after.offsetTop > before.offsetTop
+    ? Math.max(0, Math.min(1, (scrollTop - before.offsetTop) / (after.offsetTop - before.offsetTop)))
+    : 0;
+  const eBefore = cmView.lineBlockAt(cmView.state.doc.line(before.line).from).top;
+  const eAfter  = cmView.lineBlockAt(cmView.state.doc.line(Math.min(after.line, totalLines)).from).top;
+  cmView.scrollDOM.scrollTop = eBefore + frac * (eAfter - eBefore);
 }
 
 function continueListOnEnter(view) {
@@ -265,11 +415,13 @@ function getFormData() {
   const tags = JSON.stringify(getTags());
   const content = mdContent;
 
-  const fields = {};
+  // Start from existing fields to preserve keys not rendered in schema (e.g. pubDate)
+  const fields = { ...(JSON.parse(draft.fields || "{}")) };
   document.querySelectorAll("[data-key-extra]").forEach((el) => {
     const key = el.dataset.keyExtra;
     if (el.type === "checkbox") fields[key] = el.checked;
     else if (el.value !== "") fields[key] = el.value;
+    else delete fields[key];
   });
 
   return { title, lang, description, tags, fields: JSON.stringify(fields), content };
@@ -303,18 +455,6 @@ async function autoSave() {
   }
 }
 
-async function refreshSchema() {
-  btnRefreshSchema.disabled = true;
-  btnRefreshSchema.textContent = "更新中...";
-  try {
-    schema = await fetch("/api/schema/refresh", { method: "POST" }).then((r) => r.json());
-    renderFields();
-  } finally {
-    btnRefreshSchema.disabled = false;
-    btnRefreshSchema.textContent = "更新欄位";
-  }
-}
-
 async function publish() {
   const body = getFormData();
   if (!body.title.trim()) { alert("請輸入標題"); return; }
@@ -345,6 +485,47 @@ async function publish() {
     btnPublish.disabled = false;
     btnPublish.textContent = "送出 PR";
   }
+}
+
+function renderGithubSourceInfo() {
+  const existing = document.getElementById("github-source-info");
+  existing?.remove();
+  if (!draft?.github_path) return;
+
+  const info = document.createElement("div");
+  info.id = "github-source-info";
+  info.style.cssText = "margin-bottom:0.75rem;padding:0.5rem 0.75rem;background:#1a2a1a;border:1px solid #2a4a2a;border-radius:6px;font-size:0.8rem;color:#86efac;display:flex;align-items:center;gap:0.75rem;";
+  info.innerHTML = `
+    <span>GitHub 來源: <code style="background:#0d1a0d;padding:0.1rem 0.3rem;border-radius:3px">${escHtml(draft.github_path)}</code></span>
+    <button id="btn-resync" class="btn btn-secondary" style="font-size:0.75rem;padding:0.2rem 0.6rem;margin-left:auto">重新同步</button>
+  `;
+  fieldsForm.parentNode.insertBefore(info, fieldsForm);
+
+  document.getElementById("btn-resync").addEventListener("click", async () => {
+    if (!confirm("確定要從 GitHub 重新同步？本地的修改將被覆蓋。")) return;
+    const btn = document.getElementById("btn-resync");
+    btn.disabled = true;
+    btn.textContent = "同步中...";
+    try {
+      const res = await fetch(`/api/drafts/${draftId}/resync`, { method: "POST" });
+      if (res.ok) {
+        draft = await res.json();
+        renderFields();
+        cmView.dispatch({ changes: { from: 0, to: cmView.state.doc.length, insert: draft.content ?? "" } });
+        mdContent = draft.content ?? "";
+        renderPreview();
+        renderGithubSourceInfo();
+      } else {
+        const data = await res.json();
+        alert(`同步失敗：${data.error}`);
+      }
+    } catch (e) {
+      alert(`同步失敗：${e.message}`);
+    } finally {
+      const b = document.getElementById("btn-resync");
+      if (b) { b.disabled = false; b.textContent = "重新同步"; }
+    }
+  });
 }
 
 function updatePublishButton() {

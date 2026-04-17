@@ -245,11 +245,132 @@ function initEditor() {
     }),
   });
 
+  initScrollSync();
 }
 
 function renderPreview() {
   if (!previewEl) return;
-  previewEl.innerHTML = marked.parse(mdContent || "");
+
+  const md = mdContent || "";
+  const tokens = marked.lexer(md);
+  const BLOCK_TYPES = new Set(["heading", "paragraph", "code", "blockquote", "list", "hr", "table", "html"]);
+  const blockLineNumbers = [];
+  let line = 1;
+
+  for (const token of tokens) {
+    if (BLOCK_TYPES.has(token.type)) blockLineNumbers.push(line);
+    line += (token.raw.match(/\n/g) || []).length;
+  }
+
+  previewEl.innerHTML = marked.parse(md);
+
+  const blockEls = previewEl.querySelectorAll(
+    ":scope > h1, :scope > h2, :scope > h3, :scope > h4, :scope > h5, :scope > h6, " +
+    ":scope > p, :scope > pre, :scope > blockquote, :scope > ul, :scope > ol, " +
+    ":scope > hr, :scope > table, :scope > div"
+  );
+  blockEls.forEach((el, i) => {
+    if (i < blockLineNumbers.length) el.dataset.sourceLine = blockLineNumbers[i];
+  });
+}
+
+// ── Scroll sync ──────────────────────────────────────────────────────────────
+
+let scrollSyncSource = null;
+let scrollSyncTimer = null;
+
+function initScrollSync() {
+  cmView.scrollDOM.addEventListener("scroll", () => {
+    if (scrollSyncSource === "preview") return;
+    scrollSyncSource = "editor";
+    clearTimeout(scrollSyncTimer);
+    syncPreviewFromEditor();
+    scrollSyncTimer = setTimeout(() => { scrollSyncSource = null; }, 100);
+  }, { passive: true });
+
+  previewEl.addEventListener("scroll", () => {
+    if (scrollSyncSource === "editor") return;
+    scrollSyncSource = "preview";
+    clearTimeout(scrollSyncTimer);
+    syncEditorFromPreview();
+    scrollSyncTimer = setTimeout(() => { scrollSyncSource = null; }, 100);
+  }, { passive: true });
+}
+
+function getPreviewAnchors() {
+  return [...previewEl.querySelectorAll("[data-source-line]")]
+    .map(el => ({ el, line: parseInt(el.dataset.sourceLine, 10) }))
+    .filter(a => !isNaN(a.line));
+}
+
+function syncPreviewFromEditor() {
+  const scrollDOM = cmView.scrollDOM;
+  const scrollTop = scrollDOM.scrollTop;
+  const scrollMax = scrollDOM.scrollHeight - scrollDOM.clientHeight;
+  if (scrollMax <= 0) return;
+
+  const topBlock = cmView.lineBlockAtHeight(scrollTop);
+  const topLine = cmView.state.doc.lineAt(topBlock.from).number;
+  const totalLines = cmView.state.doc.lines;
+  const anchors = getPreviewAnchors();
+
+  if (!anchors.length) {
+    previewEl.scrollTop = (scrollTop / scrollMax) * (previewEl.scrollHeight - previewEl.clientHeight);
+    return;
+  }
+
+  let before = null, after = null;
+  for (const a of anchors) {
+    if (a.line <= topLine) before = a;
+    else if (!after) after = a;
+  }
+
+  if (!before) { previewEl.scrollTop = 0; return; }
+
+  if (!after) {
+    previewEl.scrollTop = (scrollTop / scrollMax) * (previewEl.scrollHeight - previewEl.clientHeight);
+    return;
+  }
+
+  const eBefore = cmView.lineBlockAt(cmView.state.doc.line(before.line).from).top;
+  const eAfter  = cmView.lineBlockAt(cmView.state.doc.line(Math.min(after.line, totalLines)).from).top;
+  const frac = eAfter > eBefore ? Math.max(0, Math.min(1, (scrollTop - eBefore) / (eAfter - eBefore))) : 0;
+  previewEl.scrollTop = before.el.offsetTop + frac * (after.el.offsetTop - before.el.offsetTop);
+}
+
+function syncEditorFromPreview() {
+  const scrollTop = previewEl.scrollTop;
+  const scrollMax = previewEl.scrollHeight - previewEl.clientHeight;
+  if (scrollMax <= 0) return;
+
+  const anchors = getPreviewAnchors();
+
+  if (!anchors.length) {
+    cmView.scrollDOM.scrollTop = (scrollTop / scrollMax) * (cmView.scrollDOM.scrollHeight - cmView.scrollDOM.clientHeight);
+    return;
+  }
+
+  let before = null, after = null;
+  for (const a of anchors) {
+    const top = a.el.offsetTop;
+    if (top <= scrollTop) before = { ...a, offsetTop: top };
+    else if (!after) after = { ...a, offsetTop: top };
+  }
+
+  if (!before) { cmView.scrollDOM.scrollTop = 0; return; }
+
+  if (!after) {
+    cmView.scrollDOM.scrollTop = (scrollTop / scrollMax) * (cmView.scrollDOM.scrollHeight - cmView.scrollDOM.clientHeight);
+    return;
+  }
+
+  const totalLines = cmView.state.doc.lines;
+  const frac = after.offsetTop > before.offsetTop
+    ? Math.max(0, Math.min(1, (scrollTop - before.offsetTop) / (after.offsetTop - before.offsetTop)))
+    : 0;
+  const eBefore = cmView.lineBlockAt(cmView.state.doc.line(before.line).from).top;
+  const eAfter  = cmView.lineBlockAt(cmView.state.doc.line(Math.min(after.line, totalLines)).from).top;
+  cmView.scrollDOM.scrollTop = eBefore + frac * (eAfter - eBefore);
 }
 
 function continueListOnEnter(view) {

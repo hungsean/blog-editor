@@ -21,7 +21,6 @@ marked.use(markedHighlight({
 // Hardcoded extra fields (everything except title / lang / description / tags)
 const EXTRA_FIELDS = [
   { key: "pubDate", type: "date", required: true },
-  { key: "persona", type: "enum", options: ["", "表", "裏"], required: false },
   { key: "nsfw", type: "boolean", default: false },
 ];
 
@@ -97,7 +96,7 @@ function renderTextField({ key, label, required }, value = "") {
 }
 
 function renderLangField(value) {
-  const opts = ["zh-tw", "en"];
+  const opts = ["zh-tw", "en", "jp"];
   return `
     <div class="field-group">
       <label>語言</label>

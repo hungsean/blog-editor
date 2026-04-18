@@ -1,3 +1,6 @@
+let selectMode = false;
+const selectedIds = new Set();
+
 async function loadDrafts() {
   const list = document.getElementById("drafts-list");
   try {
@@ -10,46 +13,65 @@ async function loadDrafts() {
     }
 
     list.innerHTML = `<div class="drafts-grid">${drafts.map(draftCard).join("")}</div>`;
-
-    list.querySelectorAll(".btn-edit").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        window.location.href = `/editor/${btn.dataset.id}`;
-      });
-    });
-
-    list.querySelectorAll(".btn-delete").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        if (!confirm("確定要刪除這篇草稿？")) return;
-        await fetch(`/api/drafts/${btn.dataset.id}`, { method: "DELETE" });
-        loadDrafts();
-      });
-    });
-
-    list.querySelectorAll(".btn-resync").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        if (!confirm("確定要從 GitHub 重新同步？本地的修改將被覆蓋。")) return;
-        btn.disabled = true;
-        btn.textContent = "同步中...";
-        try {
-          const res = await fetch(`/api/drafts/${btn.dataset.id}/resync`, { method: "POST" });
-          if (res.ok) {
-            loadDrafts();
-          } else {
-            const data = await res.json();
-            alert(`同步失敗：${data.error}`);
-            btn.disabled = false;
-            btn.textContent = "重新同步";
-          }
-        } catch (e) {
-          alert(`同步失敗：${e.message}`);
-          btn.disabled = false;
-          btn.textContent = "重新同步";
-        }
-      });
-    });
+    attachCardListeners(list, drafts);
   } catch (e) {
     list.innerHTML = `<p class="loading">載入失敗：${e.message}</p>`;
   }
+}
+
+function attachCardListeners(list, drafts) {
+  list.querySelectorAll(".btn-edit").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      window.location.href = `/editor/${btn.dataset.id}`;
+    });
+  });
+
+  list.querySelectorAll(".btn-delete").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (!confirm("確定要刪除這篇草稿？")) return;
+      await fetch(`/api/drafts/${btn.dataset.id}`, { method: "DELETE" });
+      loadDrafts();
+    });
+  });
+
+  list.querySelectorAll(".btn-resync").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (!confirm("確定要從 GitHub 重新同步？本地的修改將被覆蓋。")) return;
+      btn.disabled = true;
+      btn.textContent = "同步中...";
+      try {
+        const res = await fetch(`/api/drafts/${btn.dataset.id}/resync`, { method: "POST" });
+        if (res.ok) {
+          loadDrafts();
+        } else {
+          const data = await res.json();
+          alert(`同步失敗：${data.error}`);
+          btn.disabled = false;
+          btn.textContent = "重新同步";
+        }
+      } catch (e) {
+        alert(`同步失敗：${e.message}`);
+        btn.disabled = false;
+        btn.textContent = "重新同步";
+      }
+    });
+  });
+
+  // Select mode: checkbox listeners
+  list.querySelectorAll(".draft-select-cb").forEach((cb) => {
+    cb.addEventListener("change", () => {
+      if (cb.checked) {
+        selectedIds.add(cb.dataset.id);
+        cb.closest(".draft-card").classList.add("selected");
+      } else {
+        selectedIds.delete(cb.dataset.id);
+        cb.closest(".draft-card").classList.remove("selected");
+      }
+      updateBatchBar();
+    });
+  });
+
+  applySelectModeUI();
 }
 
 function draftCard(d) {
@@ -69,8 +91,14 @@ function draftCard(d) {
     ? `<button class="btn btn-secondary btn-resync" data-id="${d.id}" style="font-size:0.75rem;padding:0.2rem 0.5rem">重新同步</button>`
     : "";
 
+  const isChecked = selectedIds.has(d.id) ? "checked" : "";
+  const selectedClass = selectedIds.has(d.id) ? " selected" : "";
+
   return `
-    <div class="draft-card">
+    <div class="draft-card${selectedClass}" data-id="${d.id}">
+      <label class="draft-select-wrap" style="display:none">
+        <input type="checkbox" class="draft-select-cb" data-id="${d.id}" ${isChecked}>
+      </label>
       <div class="draft-info">
         <div class="draft-title">${escHtml(d.title || "(未命名)")}</div>
         <div class="draft-meta">${statusBadge} ${sourceBadge} ${d.lang} · 更新 ${date} ${prLink}</div>
@@ -86,6 +114,92 @@ function draftCard(d) {
 function escHtml(s) {
   return String(s).replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
 }
+
+// ── Select mode ──────────────────────────────────────────────────────────────
+
+function applySelectModeUI() {
+  const list = document.getElementById("drafts-list");
+  const checkboxes = list.querySelectorAll(".draft-select-wrap");
+  const actionBtns = list.querySelectorAll(".draft-actions");
+
+  if (selectMode) {
+    checkboxes.forEach((el) => { el.style.display = "flex"; });
+    actionBtns.forEach((el) => { el.style.display = "none"; });
+  } else {
+    checkboxes.forEach((el) => { el.style.display = "none"; });
+    actionBtns.forEach((el) => { el.style.display = "flex"; });
+  }
+}
+
+function updateBatchBar() {
+  const count = selectedIds.size;
+  document.getElementById("batch-count").textContent = `已選取 ${count} 篇`;
+  document.getElementById("batch-submit").disabled = count === 0;
+}
+
+function enterSelectMode() {
+  selectMode = true;
+  selectedIds.clear();
+  document.getElementById("btn-select-mode").textContent = "✕ 取消選取";
+  document.getElementById("btn-select-mode").classList.add("btn-active");
+  document.getElementById("batch-bar").style.display = "flex";
+  updateBatchBar();
+  applySelectModeUI();
+}
+
+function exitSelectMode() {
+  selectMode = false;
+  selectedIds.clear();
+  document.getElementById("btn-select-mode").textContent = "☑ 選取模式";
+  document.getElementById("btn-select-mode").classList.remove("btn-active");
+  document.getElementById("batch-bar").style.display = "none";
+  // Uncheck all checkboxes and remove selected class
+  document.querySelectorAll(".draft-select-cb").forEach((cb) => { cb.checked = false; });
+  document.querySelectorAll(".draft-card.selected").forEach((el) => { el.classList.remove("selected"); });
+  applySelectModeUI();
+}
+
+document.getElementById("btn-select-mode").addEventListener("click", () => {
+  if (selectMode) exitSelectMode();
+  else enterSelectMode();
+});
+
+document.getElementById("batch-cancel").addEventListener("click", exitSelectMode);
+
+document.getElementById("batch-submit").addEventListener("click", async () => {
+  const draftIds = [...selectedIds];
+  if (draftIds.length === 0) return;
+  if (!confirm(`確定要將選取的 ${draftIds.length} 篇文章一起送出 PR？`)) return;
+
+  const submitBtn = document.getElementById("batch-submit");
+  submitBtn.disabled = true;
+  submitBtn.textContent = "送出中...";
+
+  try {
+    const res = await fetch("/api/batch-publish", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ draftIds }),
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      alert(`送出失敗：${data.error}`);
+      submitBtn.disabled = false;
+      submitBtn.textContent = "一起送 PR";
+      return;
+    }
+
+    alert(`成功！已開啟 PR，包含 ${data.count} 篇文章。`);
+    if (data.pr_url) window.open(data.pr_url, "_blank");
+    exitSelectMode();
+    loadDrafts();
+  } catch (e) {
+    alert(`送出失敗：${e.message}`);
+    submitBtn.disabled = false;
+    submitBtn.textContent = "一起送 PR";
+  }
+});
 
 // ── New article ──────────────────────────────────────────────────────────────
 

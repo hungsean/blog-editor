@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { nanoid } from "nanoid";
 import { db } from "../lib/db";
-import { openPR, listGithubPosts, getGithubFile } from "../lib/github";
+import { openPR, openBatchPR, listGithubPosts, getGithubFile } from "../lib/github";
 import { parseFrontmatter, frontmatterToDraft } from "../lib/frontmatter";
 
 type Draft = {
@@ -153,6 +153,64 @@ api.post("/drafts/:id/publish", async (c) => {
     ).run(prUrl, new Date().toISOString(), id);
 
     return c.json({ success: true, pr_url: prUrl });
+  } catch (err) {
+    return c.json({ error: String(err) }, 500);
+  }
+});
+
+// POST /api/batch-publish — open one PR with multiple drafts
+api.post("/batch-publish", async (c) => {
+  const body = await c.req.json().catch(() => ({})) as { draftIds?: string[] };
+  if (!Array.isArray(body.draftIds) || body.draftIds.length === 0) {
+    return c.json({ error: "draftIds is required" }, 400);
+  }
+
+  const drafts = body.draftIds
+    .map((id) => db.query("SELECT * FROM drafts WHERE id = ?").get(id) as Draft | null)
+    .filter((d): d is Draft => d !== null);
+
+  if (drafts.length === 0) return c.json({ error: "No valid drafts found" }, 404);
+
+  const files = drafts.map((draft) => {
+    const fields = JSON.parse(draft.fields || "{}");
+    const tags = JSON.parse(draft.tags || "[]");
+    const date = typeof fields.pubDate === "string" && fields.pubDate
+      ? fields.pubDate
+      : new Date().toISOString().slice(0, 10);
+    const slug = slugify(draft.title) || draft.id;
+
+    const fm: Record<string, unknown> = { title: draft.title, lang: draft.lang, pubDate: date };
+    if (draft.description) fm.description = draft.description;
+    if (tags.length > 0) fm.tags = tags;
+    Object.assign(fm, fields);
+
+    const frontmatter = Object.entries(fm)
+      .map(([k, v]) => {
+        if (Array.isArray(v)) return `${k}: [${v.map((x) => `"${x}"`).join(", ")}]`;
+        if (typeof v === "boolean") return `${k}: ${v}`;
+        return `${k}: ${String(v)}`;
+      })
+      .join("\n") + "\n";
+
+    return {
+      title: draft.title,
+      slug,
+      date,
+      frontmatter,
+      content: draft.content,
+      githubPath: draft.github_path || undefined,
+      githubSha: draft.github_sha || undefined,
+    };
+  });
+
+  try {
+    const { prUrl } = await openBatchPR(files);
+    const now = new Date().toISOString();
+    for (const draft of drafts) {
+      db.query("UPDATE drafts SET status = 'pr_opened', pr_url = ?, updated_at = ? WHERE id = ?")
+        .run(prUrl, now, draft.id);
+    }
+    return c.json({ success: true, pr_url: prUrl, count: drafts.length });
   } catch (err) {
     return c.json({ error: String(err) }, 500);
   }

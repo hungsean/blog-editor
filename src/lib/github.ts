@@ -66,6 +66,85 @@ export async function getGithubFile(path: string): Promise<{ content: string; sh
   return { content, sha: data.sha };
 }
 
+export interface BatchPRFile {
+  title: string;
+  slug: string;
+  date: string;
+  frontmatter: string;
+  content: string;
+  githubPath?: string;
+  githubSha?: string;
+}
+
+export async function openBatchPR(files: BatchPRFile[]): Promise<{ prUrl: string }> {
+  const today = new Date().toISOString().slice(0, 10);
+  const shortId = Math.random().toString(36).slice(2, 7);
+  const branch = `blog/${today}-batch-${shortId}`;
+
+  // Get base commit SHA
+  const baseRef = await githubFetch(
+    `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/git/ref/heads/${GITHUB_DEFAULT_BRANCH}`
+  ) as { object: { sha: string } };
+  const baseSha = baseRef.object.sha;
+
+  // Get base commit to find base tree SHA
+  const baseCommit = await githubFetch(
+    `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/git/commits/${baseSha}`
+  ) as { tree: { sha: string } };
+  const baseTreeSha = baseCommit.tree.sha;
+
+  // Create blobs for all files
+  const treeEntries = await Promise.all(files.map(async (f) => {
+    const [year, monthDay] = [f.date.slice(0, 4), f.date.slice(5, 10)];
+    const filePath = f.githubPath ?? `src/content/blog/${year}/${monthDay}/${f.slug}.md`;
+    const fileContent = `---\n${f.frontmatter}---\n\n${f.content}`;
+
+    const blob = await githubFetch(`/repos/${GITHUB_OWNER}/${GITHUB_REPO}/git/blobs`, {
+      method: "POST",
+      body: JSON.stringify({
+        content: Buffer.from(fileContent).toString("base64"),
+        encoding: "base64",
+      }),
+    }) as { sha: string };
+
+    return { path: filePath, mode: "100644", type: "blob", sha: blob.sha };
+  }));
+
+  // Create new tree
+  const newTree = await githubFetch(`/repos/${GITHUB_OWNER}/${GITHUB_REPO}/git/trees`, {
+    method: "POST",
+    body: JSON.stringify({ base_tree: baseTreeSha, tree: treeEntries }),
+  }) as { sha: string };
+
+  // Create commit
+  const titles = files.map((f) => f.title).filter(Boolean);
+  const commitMessage = `feat: add posts "${titles.join('", "')}"`;
+  const newCommit = await githubFetch(`/repos/${GITHUB_OWNER}/${GITHUB_REPO}/git/commits`, {
+    method: "POST",
+    body: JSON.stringify({ message: commitMessage, tree: newTree.sha, parents: [baseSha] }),
+  }) as { sha: string };
+
+  // Create branch pointing to new commit
+  await githubFetch(`/repos/${GITHUB_OWNER}/${GITHUB_REPO}/git/refs`, {
+    method: "POST",
+    body: JSON.stringify({ ref: `refs/heads/${branch}`, sha: newCommit.sha }),
+  });
+
+  // Open PR
+  const prBody = `Batch post PR:\n${titles.map((t) => `- **${t}**`).join("\n")}`;
+  const pr = await githubFetch(`/repos/${GITHUB_OWNER}/${GITHUB_REPO}/pulls`, {
+    method: "POST",
+    body: JSON.stringify({
+      title: `[Post] ${titles.length} 篇文章`,
+      head: branch,
+      base: GITHUB_DEFAULT_BRANCH,
+      body: prBody,
+    }),
+  }) as { html_url: string };
+
+  return { prUrl: pr.html_url };
+}
+
 export async function openPR(params: {
   title: string;
   slug: string;

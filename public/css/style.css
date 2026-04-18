@@ -101,6 +101,43 @@ h1 { font-size: 1.5rem; font-weight: 700; }
 }
 
 .draft-card:hover { border-color: var(--primary); }
+.draft-card.selected { border-color: var(--primary); background: #1e1f3a; }
+
+/* Select mode checkbox */
+.draft-select-wrap {
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.draft-select-wrap input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--primary);
+  cursor: pointer;
+}
+
+/* Batch action bar */
+.batch-bar {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 100px;
+  padding: 10px 20px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.5);
+  z-index: 50;
+}
+#batch-count { font-size: 0.875rem; color: var(--text-muted); white-space: nowrap; }
+.batch-bar-actions { display: flex; gap: 8px; }
+
+/* Active select mode button */
+.btn-active { background: var(--primary) !important; color: #fff !important; border-color: var(--primary) !important; }
 
 .draft-info { flex: 1; min-width: 0; }
 .draft-title {

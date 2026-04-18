@@ -29,6 +29,7 @@ function listPage() {
     <header>
       <h1>Blog Editor</h1>
       <div class="header-actions">
+        <button id="btn-select-mode" class="btn btn-secondary">☑ 選取模式</button>
         <button id="btn-sync" class="btn btn-secondary">↓ 從 GitHub 同步</button>
         <button id="btn-new" class="btn btn-primary">+ 新增文章</button>
       </div>
@@ -52,6 +53,15 @@ function listPage() {
         <button id="sync-modal-cancel" class="btn btn-secondary">取消</button>
         <button id="sync-modal-confirm" class="btn btn-primary" disabled>同步選取</button>
       </div>
+    </div>
+  </div>
+
+  <!-- Batch PR action bar -->
+  <div id="batch-bar" class="batch-bar" style="display:none">
+    <span id="batch-count">已選取 0 篇</span>
+    <div class="batch-bar-actions">
+      <button id="batch-cancel" class="btn btn-secondary">取消</button>
+      <button id="batch-submit" class="btn btn-success" disabled>一起送 PR</button>
     </div>
   </div>
 

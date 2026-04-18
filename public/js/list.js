@@ -153,7 +153,9 @@ function exitSelectMode() {
   document.getElementById("btn-select-mode").textContent = "☑ 選取模式";
   document.getElementById("btn-select-mode").classList.remove("btn-active");
   document.getElementById("batch-bar").style.display = "none";
-  // Uncheck all checkboxes and remove selected class
+  const submitBtn = document.getElementById("batch-submit");
+  submitBtn.disabled = true;
+  submitBtn.textContent = "一起送 PR";
   document.querySelectorAll(".draft-select-cb").forEach((cb) => { cb.checked = false; });
   document.querySelectorAll(".draft-card.selected").forEach((el) => { el.classList.remove("selected"); });
   applySelectModeUI();

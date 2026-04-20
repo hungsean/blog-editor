@@ -69,6 +69,7 @@ export async function getGithubFile(path: string): Promise<{ content: string; sh
 export interface BatchPRFile {
   title: string;
   slug: string;
+  lang: string;
   date: string;
   frontmatter: string;
   content: string;
@@ -95,8 +96,7 @@ export async function openBatchPR(files: BatchPRFile[]): Promise<{ prUrl: string
 
   // Create blobs for all files
   const treeEntries = await Promise.all(files.map(async (f) => {
-    const [year, monthDay] = [f.date.slice(0, 4), f.date.slice(5, 10)];
-    const filePath = f.githubPath ?? `src/content/blog/${year}/${monthDay}/${f.slug}.md`;
+    const filePath = f.githubPath ?? `src/content/blog/${f.lang}/${f.slug}.md`;
     const fileContent = `---\n${f.frontmatter}---\n\n${f.content}`;
 
     const blob = await githubFetch(`/repos/${GITHUB_OWNER}/${GITHUB_REPO}/git/blobs`, {
@@ -148,6 +148,7 @@ export async function openBatchPR(files: BatchPRFile[]): Promise<{ prUrl: string
 export async function openPR(params: {
   title: string;
   slug: string;
+  lang: string;
   date: string;
   frontmatter: string;
   content: string;
@@ -156,10 +157,9 @@ export async function openPR(params: {
   /** Required when githubPath is set — the current file SHA */
   githubSha?: string;
 }): Promise<{ prUrl: string; filePath: string }> {
-  const { title, slug, date, frontmatter, content, githubPath, githubSha } = params;
-  const [year, monthDay] = [date.slice(0, 4), date.slice(5, 10)];
-  const branch = `blog/${date}-${slug}`;
-  const filePath = githubPath ?? `src/content/blog/${year}/${monthDay}/${slug}.md`;
+  const { title, slug, lang, date, frontmatter, content, githubPath, githubSha } = params;
+  const branch = `blog/${date}-${lang}-${slug}`;
+  const filePath = githubPath ?? `src/content/blog/${lang}/${slug}.md`;
   const fileContent = `---\n${frontmatter}---\n\n${content}`;
 
   // Get base SHA

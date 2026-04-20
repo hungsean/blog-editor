@@ -30,6 +30,7 @@ for (const [col, def] of [
   ["github_path", "TEXT DEFAULT ''"],
   ["github_sha",  "TEXT DEFAULT ''"],
   ["source",      "TEXT DEFAULT 'local'"],
+  ["slug",        "TEXT DEFAULT ''"],
 ] as const) {
   try {
     db.exec(`ALTER TABLE drafts ADD COLUMN ${col} ${def}`);

@@ -18,14 +18,24 @@ marked.use(markedHighlight({
   }
 }))
 
-// Hardcoded extra fields (everything except title / lang / description / tags)
+// Hardcoded extra fields (everything except title / lang / slug / description / tags)
 const EXTRA_FIELDS = [
   { key: "pubDate", type: "date", required: true },
   { key: "nsfw", type: "boolean", default: false },
 ];
 
+function slugifyClient(text) {
+  return String(text)
+    .toLowerCase()
+    .replace(/[\u4e00-\u9fff]+/g, "")
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 50);
+}
+
 let draftId = globalThis.__DRAFT_ID__;
 let draft = null;
+let translations = []; // [{id, lang, title, status}]
 let cmView = null;
 let previewEl = null;
 let mdContent = "";
@@ -60,6 +70,7 @@ async function init() {
     history.replaceState(null, "", `/editor/${draftId}`);
   }
 
+  await loadTranslations();
   renderFields();
   initEditor();
   updatePublishButton();
@@ -68,23 +79,126 @@ async function init() {
   btnPublish.addEventListener("click", publish);
 }
 
+async function loadTranslations() {
+  if (!draftId) return;
+  try {
+    const res = await fetch(`/api/drafts/${draftId}/translations`);
+    if (res.ok) translations = await res.json();
+  } catch { /* ignore */ }
+}
+
 function renderFields() {
   const extraFields = JSON.parse(draft.fields || "{}");
   const rows = EXTRA_FIELDS.map((f) => renderField(f, extraFields[f.key]));
+  const currentLang = draft.lang || "zh-tw";
 
   fieldsForm.innerHTML = `
     ${renderTextField({ key: "title", label: "標題", required: true }, draft.title)}
-    ${renderLangField(draft.lang)}
+    ${renderSlugField(draft.slug, draft.title)}
+    ${renderLangField(currentLang)}
     ${renderTextField({ key: "description", label: "描述" }, draft.description)}
     ${renderTagsField(JSON.parse(draft.tags || "[]"))}
     ${rows.join("")}
+    ${renderTranslationSection(currentLang)}
   `;
 
+  // Wire up all simple inputs except title (handled separately for slug sync)
   fieldsForm.querySelectorAll("input[data-key], select[data-key]").forEach((el) => {
+    if (el.dataset.key === "title" || el.dataset.key === "slug") return;
     el.addEventListener("input", scheduleSave);
   });
+
+  // Title → slug auto-sync
+  const titleEl = fieldsForm.querySelector('[data-key="title"]');
+  const slugEl = fieldsForm.querySelector('[data-key="slug"]');
+  let prevDerived = slugifyClient(draft.title || "");
+  titleEl?.addEventListener("input", () => {
+    const newDerived = slugifyClient(titleEl.value);
+    if (slugEl && slugEl.value === prevDerived) slugEl.value = newDerived;
+    prevDerived = newDerived;
+    scheduleSave();
+  });
+  slugEl?.addEventListener("input", scheduleSave);
+
+  document.getElementById("btn-reset-slug")?.addEventListener("click", () => {
+    if (slugEl && titleEl) { slugEl.value = slugifyClient(titleEl.value); scheduleSave(); }
+  });
+
+  // Translation buttons
+  fieldsForm.querySelectorAll(".btn-create-translation").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const targetLang = btn.dataset.lang;
+      if (!confirm(`確定要建立 ${targetLang} 翻譯版本？內容將從目前草稿複製。`)) return;
+      clearTimeout(saveTimer);
+      await autoSave();
+      btn.disabled = true;
+      btn.textContent = "建立中...";
+      try {
+        const res = await fetch(`/api/drafts/${draftId}/translate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ targetLang }),
+        });
+        const data = await res.json();
+        if (data.id) {
+          window.location.href = `/editor/${data.id}`;
+        } else {
+          alert(`建立失敗：${data.error}`);
+          btn.disabled = false;
+          btn.textContent = `+ ${targetLang} 版`;
+        }
+      } catch (e) {
+        alert(`建立失敗：${e.message}`);
+        btn.disabled = false;
+      }
+    });
+  });
+
   initTagsInput();
   initDatePickers();
+}
+
+function renderSlugField(slug, title) {
+  const val = slug || slugifyClient(title || "");
+  return `
+    <div class="field-group">
+      <label>Slug <small style="color:#666">(URL 識別碼，翻譯版本共用)</small></label>
+      <div style="display:flex;gap:0.5rem">
+        <input type="text" data-key="slug" value="${escAttr(val)}" placeholder="自動從標題產生" style="flex:1">
+        <button type="button" id="btn-reset-slug" class="btn btn-secondary" style="white-space:nowrap;font-size:0.8rem;padding:0 0.6rem">重設</button>
+      </div>
+    </div>`;
+}
+
+function renderTranslationSection(currentLang) {
+  const LANGS = [
+    { value: "zh-tw", label: "繁中 (zh-tw)" },
+    { value: "en",    label: "English (en)" },
+    { value: "ja",    label: "日本語 (ja)" },
+  ];
+  const others = LANGS.filter((l) => l.value !== currentLang);
+  const existingMap = Object.fromEntries(translations.map((t) => [t.lang, t]));
+
+  const items = others.map((l) => {
+    const existing = existingMap[l.value];
+    if (existing) {
+      const statusDot = existing.status === "pr_opened"
+        ? `<span style="color:#22c55e">●</span> `
+        : `<span style="color:#888">●</span> `;
+      return `<a href="/editor/${existing.id}" class="btn btn-filled" style="font-size:0.8rem;text-decoration:none">
+        ${statusDot}${escHtml(l.label)} →
+      </a>`;
+    }
+    return `<button type="button" class="btn btn-secondary btn-create-translation" data-lang="${l.value}" style="font-size:0.8rem">
+      + ${escHtml(l.label)}
+    </button>`;
+  });
+
+  return `
+    <div class="field-group">
+      <label>翻譯版本</label>
+      <div style="display:flex;gap:0.5rem;flex-wrap:wrap">${items.join("")}</div>
+    </div>`;
 }
 
 function renderTextField({ key, label, required }, value = "") {
@@ -96,7 +210,7 @@ function renderTextField({ key, label, required }, value = "") {
 }
 
 function renderLangField(value) {
-  const opts = ["zh-tw", "en", "jp"];
+  const opts = ["zh-tw", "en", "ja"];
   return `
     <div class="field-group">
       <label>語言</label>
@@ -410,6 +524,7 @@ function getFormData() {
   const get = (sel) => document.querySelector(sel);
   const title = get('[data-key="title"]')?.value ?? "";
   const lang = get('[data-key="lang"]')?.value ?? "zh-tw";
+  const slug = get('[data-key="slug"]')?.value || slugifyClient(title);
   const description = get('[data-key="description"]')?.value ?? "";
   const tags = JSON.stringify(getTags());
   const content = mdContent;
@@ -423,7 +538,7 @@ function getFormData() {
     else delete fields[key];
   });
 
-  return { title, lang, description, tags, fields: JSON.stringify(fields), content };
+  return { title, lang, slug, description, tags, fields: JSON.stringify(fields), content };
 }
 
 function scheduleSave() {
@@ -444,8 +559,15 @@ async function autoSave() {
       body: JSON.stringify(body),
     });
     if (res.ok) {
+      const prevSlug = draft.slug;
       draft = await res.json();
       saveStatus.textContent = "已儲存";
+      // Refresh translation section if slug changed
+      if (draft.slug !== prevSlug) {
+        await loadTranslations();
+        const section = fieldsForm.querySelector(".field-group:last-child");
+        if (section) section.outerHTML = renderTranslationSection(draft.lang);
+      }
     } else {
       saveStatus.textContent = "儲存失敗";
     }

@@ -1,5 +1,16 @@
 export type FrontmatterData = Record<string, string | boolean | string[]>;
 
+const VALID_LANGS = new Set(["zh-tw", "en", "ja"]);
+
+/** Extract lang and slug from a GitHub path like src/content/blog/{lang}/{slug}.md */
+export function extractFromPath(path: string): { lang: string; slug: string } {
+  const parts = path.split("/");
+  if (parts.length >= 5 && VALID_LANGS.has(parts[3] ?? "")) {
+    return { lang: parts[3] as string, slug: (parts[4] ?? "").replace(/\.md$/, "") };
+  }
+  return { lang: "zh-tw", slug: (parts[parts.length - 1] ?? "").replace(/\.md$/, "") };
+}
+
 export interface ParsedPost {
   frontmatter: FrontmatterData;
   body: string;

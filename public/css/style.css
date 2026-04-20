@@ -82,6 +82,8 @@ h1 { font-size: 1.5rem; font-weight: 700; }
 .btn-secondary:hover { background: var(--surface2); color: var(--text); }
 .btn-danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
 .btn-danger:hover { background: var(--danger); color: #fff; }
+.btn-filled { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+.btn-filled:hover { background: var(--border); }
 .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 /* Draft list */

@@ -36,6 +36,7 @@ function slugifyClient(text) {
 let draftId = globalThis.__DRAFT_ID__;
 let draft = null;
 let translations = []; // [{id, lang, title, status}]
+let aiTranslationEnabled = false;
 let cmView = null;
 let previewEl = null;
 let mdContent = "";
@@ -55,9 +56,15 @@ fieldsToggle?.addEventListener("click", () => {
 });
 
 async function init() {
-  draft = draftId
-    ? await fetch(`/api/drafts/${draftId}`).then((r) => r.json())
-    : null;
+  [draft] = await Promise.all([
+    draftId
+      ? fetch(`/api/drafts/${draftId}`).then((r) => r.json())
+      : Promise.resolve(null),
+    fetch("/api/translation-status")
+      .then((r) => r.json())
+      .then((d) => { aiTranslationEnabled = d.enabled; })
+      .catch(() => {}),
+  ]);
 
   if (!draftId || !draft || draft.error) {
     const res = await fetch("/api/drafts", {
@@ -124,7 +131,39 @@ function renderFields() {
     if (slugEl && titleEl) { slugEl.value = slugifyClient(titleEl.value); scheduleSave(); }
   });
 
-  // Translation buttons
+  // AI translation buttons
+  fieldsForm.querySelectorAll(".btn-ai-translate").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      const targetLang = btn.dataset.lang;
+      if (!confirm(`確定要使用 AI 自動翻譯為 ${targetLang}？`)) return;
+      clearTimeout(saveTimer);
+      await autoSave();
+      btn.disabled = true;
+      const origText = btn.textContent;
+      btn.textContent = "翻譯中...";
+      try {
+        const res = await fetch(`/api/drafts/${draftId}/ai-translate`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ targetLang }),
+        });
+        const data = await res.json();
+        if (data.id) {
+          window.location.href = `/editor/${data.id}`;
+        } else {
+          alert(`翻譯失敗：${data.error}`);
+          btn.disabled = false;
+          btn.textContent = origText;
+        }
+      } catch (e) {
+        alert(`翻譯失敗：${e.message}`);
+        btn.disabled = false;
+        btn.textContent = origText;
+      }
+    });
+  });
+
+  // Plain copy translation buttons
   fieldsForm.querySelectorAll(".btn-create-translation").forEach((btn) => {
     btn.addEventListener("click", async () => {
       const targetLang = btn.dataset.lang;
@@ -188,6 +227,16 @@ function renderTranslationSection(currentLang) {
       return `<a href="/editor/${existing.id}" class="btn btn-filled" style="font-size:0.8rem;text-decoration:none">
         ${statusDot}${escHtml(l.label)} →
       </a>`;
+    }
+    if (aiTranslationEnabled) {
+      return `<span style="display:inline-flex;gap:0.25rem;align-items:center">
+        <button type="button" class="btn btn-primary btn-ai-translate" data-lang="${l.value}" style="font-size:0.8rem" title="使用 AI 自動翻譯">
+          ✨ AI 翻譯 ${escHtml(l.label)}
+        </button>
+        <button type="button" class="btn btn-secondary btn-create-translation" data-lang="${l.value}" style="font-size:0.8rem" title="僅複製內容，不翻譯">
+          複製
+        </button>
+      </span>`;
     }
     return `<button type="button" class="btn btn-secondary btn-create-translation" data-lang="${l.value}" style="font-size:0.8rem">
       + ${escHtml(l.label)}

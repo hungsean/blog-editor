@@ -3,6 +3,7 @@ import { nanoid } from "nanoid";
 import { db } from "../lib/db";
 import { openPR, openBatchPR, listGithubPosts, getGithubFile } from "../lib/github";
 import { parseFrontmatter, frontmatterToDraft, extractFromPath } from "../lib/frontmatter";
+import { translateDraft, isTranslationEnabled } from "../lib/translator";
 
 type Draft = {
   id: string;
@@ -320,6 +321,47 @@ api.get("/drafts/:id/translations", (c) => {
   ).all(slug, id) as { id: string; lang: string; title: string; status: string }[];
 
   return c.json(siblings);
+});
+
+// GET /api/translation-status — check if AI translation is available
+api.get("/translation-status", (c) => {
+  return c.json({ enabled: isTranslationEnabled() });
+});
+
+// POST /api/drafts/:id/ai-translate — create an AI-translated copy
+api.post("/drafts/:id/ai-translate", async (c) => {
+  const id = c.req.param("id");
+  const source = db.query("SELECT * FROM drafts WHERE id = ?").get(id) as Draft | null;
+  if (!source) return c.json({ error: "Not found" }, 404);
+
+  const body = await c.req.json().catch(() => ({})) as { targetLang?: string };
+  const targetLang = body.targetLang;
+  if (!targetLang) return c.json({ error: "targetLang is required" }, 400);
+
+  const slug = source.slug || slugify(source.title) || source.id;
+
+  try {
+    const translated = await translateDraft({
+      title: source.title,
+      description: source.description,
+      content: source.content,
+      sourceLang: source.lang,
+      targetLang,
+    });
+
+    const now = new Date().toISOString();
+    const newId = nanoid();
+
+    db.query(
+      `INSERT INTO drafts (id, title, lang, slug, description, tags, fields, content, status, pr_url, created_at, updated_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft', '', ?, ?)`
+    ).run(newId, translated.title, targetLang, slug, translated.description, source.tags, source.fields, translated.content, now, now);
+
+    const newDraft = db.query("SELECT * FROM drafts WHERE id = ?").get(newId) as Draft;
+    return c.json(newDraft, 201);
+  } catch (err) {
+    return c.json({ error: String(err) }, 500);
+  }
 });
 
 // POST /api/drafts/:id/translate — create a translation copy with the same slug

@@ -221,6 +221,8 @@ h1 { font-size: 1.5rem; font-weight: 700; }
   border: 1px solid transparent;
 }
 .sync-row:hover { background: var(--surface2); border-color: var(--border); }
+.sync-row-synced { opacity: 0.5; cursor: default; }
+.sync-row-synced:hover { background: transparent; border-color: transparent; }
 .sync-path { display: flex; flex-direction: column; flex: 1; min-width: 0; }
 .sync-filename { font-size: 0.875rem; font-weight: 500; }
 .sync-fullpath { font-size: 0.72rem; color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

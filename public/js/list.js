@@ -135,6 +135,7 @@ function updateBatchBar() {
   const count = selectedIds.size;
   document.getElementById("batch-count").textContent = `已選取 ${count} 篇`;
   document.getElementById("batch-submit").disabled = count === 0;
+  document.getElementById("batch-delete").disabled = count === 0;
 }
 
 function enterSelectMode() {
@@ -156,6 +157,9 @@ function exitSelectMode() {
   const submitBtn = document.getElementById("batch-submit");
   submitBtn.disabled = true;
   submitBtn.textContent = "一起送 PR";
+  const deleteBtn = document.getElementById("batch-delete");
+  deleteBtn.disabled = true;
+  deleteBtn.textContent = "批量刪除";
   document.querySelectorAll(".draft-select-cb").forEach((cb) => { cb.checked = false; });
   document.querySelectorAll(".draft-card.selected").forEach((el) => { el.classList.remove("selected"); });
   applySelectModeUI();
@@ -167,6 +171,41 @@ document.getElementById("btn-select-mode").addEventListener("click", () => {
 });
 
 document.getElementById("batch-cancel").addEventListener("click", exitSelectMode);
+
+document.getElementById("batch-delete").addEventListener("click", async () => {
+  const draftIds = [...selectedIds];
+  if (draftIds.length === 0) return;
+
+  if (!confirm(`確定要刪除選取的 ${draftIds.length} 篇文章？`)) return;
+  if (!confirm(`再次確認：這個動作無法復原，將永久刪除這 ${draftIds.length} 篇文章，確定嗎？`)) return;
+
+  const deleteBtn = document.getElementById("batch-delete");
+  deleteBtn.disabled = true;
+  deleteBtn.textContent = "刪除中...";
+
+  try {
+    const res = await fetch("/api/batch-delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ draftIds }),
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      alert(`刪除失敗：${data.error}`);
+      deleteBtn.disabled = false;
+      deleteBtn.textContent = "批量刪除";
+      return;
+    }
+
+    exitSelectMode();
+    loadDrafts();
+  } catch (e) {
+    alert(`刪除失敗：${e.message}`);
+    deleteBtn.disabled = false;
+    deleteBtn.textContent = "批量刪除";
+  }
+});
 
 document.getElementById("batch-submit").addEventListener("click", async () => {
   const draftIds = [...selectedIds];
@@ -249,8 +288,8 @@ async function loadGithubPosts() {
         ? `<span class="badge badge-github" style="font-size:0.7rem">已同步</span>`
         : "";
       return `
-        <label class="sync-row">
-          <input type="checkbox" class="sync-check" value="${escHtml(p.path)}" data-sha="${escHtml(p.sha)}">
+        <label class="sync-row${p.synced ? " sync-row-synced" : ""}">
+          <input type="checkbox" class="sync-check" value="${escHtml(p.path)}" data-sha="${escHtml(p.sha)}"${p.synced ? " disabled" : ""}>
           <span class="sync-path">
             <span class="sync-filename">${escHtml(filename)}</span>
             <span class="sync-fullpath">${escHtml(p.path)}</span>
@@ -259,15 +298,16 @@ async function loadGithubPosts() {
         </label>`;
     }).join("");
 
+    const unsynced = posts.filter((p) => !p.synced).length;
     syncModalBody.innerHTML = `
       <div class="sync-select-all-wrap">
         <label><input type="checkbox" id="sync-select-all"> 全選</label>
-        <small style="color:#888">${posts.length} 篇文章</small>
+        <small style="color:#888">${unsynced} 篇未同步 / 共 ${posts.length} 篇</small>
       </div>
       <div class="sync-list">${rows}</div>`;
 
     document.getElementById("sync-select-all").addEventListener("change", (e) => {
-      syncModalBody.querySelectorAll(".sync-check").forEach((cb) => { cb.checked = e.target.checked; });
+      syncModalBody.querySelectorAll(".sync-check:not(:disabled)").forEach((cb) => { cb.checked = e.target.checked; });
       updateSyncConfirmBtn();
     });
 

@@ -164,6 +164,25 @@ api.post("/drafts/:id/publish", async (c) => {
   }
 });
 
+// POST /api/batch-delete — delete multiple drafts at once
+api.post("/batch-delete", async (c) => {
+  const body = await c.req.json().catch(() => ({})) as { draftIds?: string[] };
+  if (!Array.isArray(body.draftIds) || body.draftIds.length === 0) {
+    return c.json({ error: "draftIds is required" }, 400);
+  }
+
+  const deleted: string[] = [];
+  for (const id of body.draftIds) {
+    const existing = db.query("SELECT id FROM drafts WHERE id = ?").get(id);
+    if (existing) {
+      db.query("DELETE FROM drafts WHERE id = ?").run(id);
+      deleted.push(id);
+    }
+  }
+
+  return c.json({ success: true, deleted, count: deleted.length });
+});
+
 // POST /api/batch-publish — open one PR with multiple drafts
 api.post("/batch-publish", async (c) => {
   const body = await c.req.json().catch(() => ({})) as { draftIds?: string[] };

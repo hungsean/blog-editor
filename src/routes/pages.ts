@@ -61,6 +61,7 @@ function listPage() {
     <span id="batch-count">已選取 0 篇</span>
     <div class="batch-bar-actions">
       <button id="batch-cancel" class="btn btn-secondary">取消</button>
+      <button id="batch-delete" class="btn btn-danger" disabled>批量刪除</button>
       <button id="batch-submit" class="btn btn-success" disabled>一起送 PR</button>
     </div>
   </div>

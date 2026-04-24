@@ -312,6 +312,7 @@ h1 { font-size: 1.5rem; font-weight: 700; }
 label { font-size: 0.8rem; color: var(--text-muted); font-weight: 500; }
 
 input[type="text"],
+input[type="url"],
 select,
 textarea.field-input {
   background: var(--surface2);
@@ -326,6 +327,7 @@ textarea.field-input {
 }
 
 input[type="text"]:focus,
+input[type="url"]:focus,
 select:focus,
 textarea.field-input:focus {
   border-color: var(--primary);
@@ -392,6 +394,13 @@ input[type="checkbox"] {
   height: 18px;
   accent-color: var(--primary);
   cursor: pointer;
+}
+
+/* Editor toolbar (above editor-wrap) */
+.editor-toolbar {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
 }
 
 /* CodeMirror 6 + Markdown preview split */

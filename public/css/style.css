@@ -411,6 +411,7 @@ input[type="checkbox"] {
 #md-editor .cm-editor { height: 100%; font-size: 14px; }
 #md-editor .cm-editor.cm-focused { outline: none; }
 #md-editor .cm-scroller { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+#md-editor .cm-content { padding-bottom: 40vh; }
 
 #md-preview {
   overflow-y: auto;

@@ -22,6 +22,7 @@ marked.use(markedHighlight({
 const EXTRA_FIELDS = [
   { key: "pubDate", type: "date", required: true },
   { key: "nsfw", type: "boolean", default: false },
+  { key: "ogImage", type: "url", label: "OG 圖片 URL", placeholder: "https://i.example.com/cover.jpg" },
 ];
 
 function slugifyClient(text) {
@@ -375,6 +376,16 @@ function renderField(f, value) {
       <div class="field-group">
         <label>${f.key}${f.required ? " *" : ""}</label>
         <input type="text" class="flatpickr-date" data-key-extra="${f.key}" value="${escAttr(dateVal)}" readonly>
+      </div>`;
+  }
+  if (f.type === "url") {
+    const urlVal = value ? String(value) : "";
+    const label = f.label ?? f.key;
+    const placeholder = f.placeholder ?? "https://";
+    return `
+      <div class="field-group">
+        <label>${escHtml(label)}</label>
+        <input type="url" data-key-extra="${f.key}" value="${escAttr(urlVal)}" placeholder="${escAttr(placeholder)}" inputmode="url">
       </div>`;
   }
   return `

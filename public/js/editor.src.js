@@ -22,7 +22,7 @@ marked.use(markedHighlight({
 const EXTRA_FIELDS = [
   { key: "pubDate", type: "date", required: true },
   { key: "nsfw", type: "boolean", default: false },
-  { key: "ogImage", type: "url", label: "OG 圖片 URL", placeholder: "https://i.example.com/cover.jpg" },
+  { key: "ogImage", type: "url", label: "OG 圖片 URL", placeholder: "https://i.example.com/cover.jpg", upload: true },
 ];
 
 function slugifyClient(text) {
@@ -196,6 +196,7 @@ function renderFields() {
 
   initTagsInput();
   initDatePickers();
+  initImageUploadForFields();
 }
 
 function renderSlugField(slug, title) {
@@ -382,6 +383,17 @@ function renderField(f, value) {
     const urlVal = value ? String(value) : "";
     const label = f.label ?? f.key;
     const placeholder = f.placeholder ?? "https://";
+    if (f.upload) {
+      return `
+        <div class="field-group">
+          <label>${escHtml(label)}</label>
+          <div style="display:flex;gap:0.5rem">
+            <input type="url" data-key-extra="${f.key}" value="${escAttr(urlVal)}" placeholder="${escAttr(placeholder)}" inputmode="url" style="flex:1">
+            <button type="button" class="btn btn-secondary btn-upload-field-image" data-upload-target="${f.key}" style="white-space:nowrap;font-size:0.8rem;padding:0 0.7rem">↑ 上傳</button>
+          </div>
+          <input type="file" class="upload-field-file-input" data-upload-for="${f.key}" accept="image/*" style="display:none">
+        </div>`;
+    }
     return `
       <div class="field-group">
         <label>${escHtml(label)}</label>
@@ -395,10 +407,60 @@ function renderField(f, value) {
     </div>`;
 }
 
+async function uploadImage(file) {
+  const fd = new FormData();
+  fd.append("file", file);
+  const res = await fetch("/api/upload", { method: "POST", body: fd });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error ?? "上傳失敗");
+  return data.url;
+}
+
+function initImageUploadForFields() {
+  fieldsForm.querySelectorAll(".btn-upload-field-image").forEach((btn) => {
+    const targetKey = btn.dataset.uploadTarget;
+    const fileInput = fieldsForm.querySelector(`.upload-field-file-input[data-upload-for="${targetKey}"]`);
+    const urlInput = fieldsForm.querySelector(`[data-key-extra="${targetKey}"]`);
+    if (!fileInput || !urlInput) return;
+
+    btn.addEventListener("click", () => fileInput.click());
+    fileInput.addEventListener("change", async () => {
+      const file = fileInput.files[0];
+      if (!file) return;
+      fileInput.value = "";
+
+      if (urlInput.value && !confirm("已有圖片 URL，確定要重新上傳並覆蓋？")) return;
+
+      btn.disabled = true;
+      const origText = btn.textContent;
+      btn.textContent = "上傳中...";
+      try {
+        urlInput.value = await uploadImage(file);
+        scheduleSave();
+      } catch (e) {
+        alert(`上傳失敗：${e.message}`);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = origText;
+      }
+    });
+  });
+}
+
 function initEditor() {
   mdContent = draft.content ?? "";
   previewEl = document.getElementById("md-preview");
   renderPreview();
+
+  // Insert toolbar before editor-wrap
+  const editorWrap = document.querySelector(".editor-wrap");
+  const toolbar = document.createElement("div");
+  toolbar.className = "editor-toolbar";
+  toolbar.innerHTML = `
+    <button type="button" id="btn-insert-image" class="btn btn-secondary" style="font-size:0.8rem;padding:4px 12px">↑ 插入圖片</button>
+    <input type="file" id="insert-image-input" accept="image/*" style="display:none">
+  `;
+  editorWrap.parentNode.insertBefore(toolbar, editorWrap);
 
   cmView = new EditorView({
     parent: document.getElementById("md-editor"),
@@ -436,6 +498,53 @@ function initEditor() {
   });
 
   initScrollSync();
+
+  const btnInsertImage = document.getElementById("btn-insert-image");
+  const insertImageInput = document.getElementById("insert-image-input");
+
+  btnInsertImage.addEventListener("click", () => insertImageInput.click());
+  insertImageInput.addEventListener("change", async () => {
+    const file = insertImageInput.files[0];
+    if (!file) return;
+    insertImageInput.value = "";
+
+    const uid = Date.now().toString(36);
+    const placeholder = `##uploading-${uid}##`;
+    const insertText = `![上傳中...](${placeholder})`;
+
+    const { from } = cmView.state.selection.main;
+    cmView.dispatch({
+      changes: { from, to: from, insert: insertText },
+      selection: { anchor: from + insertText.length },
+    });
+    cmView.focus();
+
+    btnInsertImage.disabled = true;
+    try {
+      const url = await uploadImage(file);
+      const content = cmView.state.doc.toString();
+      const idx = content.indexOf(placeholder);
+      if (idx !== -1) {
+        const blockStart = content.lastIndexOf("![", idx);
+        const blockEnd = content.indexOf(")", idx) + 1;
+        if (blockStart !== -1 && blockEnd > blockStart) {
+          cmView.dispatch({ changes: { from: blockStart, to: blockEnd, insert: `![](${url})` } });
+        } else {
+          cmView.dispatch({ changes: { from: idx, to: idx + placeholder.length, insert: url } });
+        }
+      }
+    } catch (e) {
+      const content = cmView.state.doc.toString();
+      const blockStart = content.lastIndexOf("![", content.indexOf(placeholder));
+      const blockEnd = content.indexOf(")", content.indexOf(placeholder)) + 1;
+      if (blockStart !== -1 && blockEnd > blockStart) {
+        cmView.dispatch({ changes: { from: blockStart, to: blockEnd, insert: "" } });
+      }
+      alert(`上傳失敗：${e.message}`);
+    } finally {
+      btnInsertImage.disabled = false;
+    }
+  });
 }
 
 function renderPreview() {

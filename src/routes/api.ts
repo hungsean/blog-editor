@@ -4,6 +4,7 @@ import { db } from "../lib/db";
 import { openPR, openBatchPR, listGithubPosts, getGithubFile } from "../lib/github";
 import { parseFrontmatter, frontmatterToDraft, extractFromPath } from "../lib/frontmatter";
 import { translateDraft, isTranslationEnabled } from "../lib/translator";
+import { uploadToR2, isR2Enabled } from "../lib/r2";
 
 type Draft = {
   id: string;
@@ -404,6 +405,32 @@ api.post("/drafts/:id/translate", async (c) => {
 
   const newDraft = db.query("SELECT * FROM drafts WHERE id = ?").get(newId) as Draft;
   return c.json(newDraft, 201);
+});
+
+// POST /api/upload — upload an image to R2 and return its public URL
+api.post("/upload", async (c) => {
+  if (!isR2Enabled()) return c.json({ error: "R2 not configured" }, 503);
+
+  let formData: FormData;
+  try {
+    formData = await c.req.formData();
+  } catch {
+    return c.json({ error: "Invalid form data" }, 400);
+  }
+
+  const file = formData.get("file") as File | null;
+  if (!file || typeof file === "string") return c.json({ error: "No file provided" }, 400);
+
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "bin";
+  const key = `uploads/${nanoid()}.${ext}`;
+  const buffer = new Uint8Array(await file.arrayBuffer());
+
+  try {
+    const url = await uploadToR2(key, buffer, file.type || "application/octet-stream");
+    return c.json({ url });
+  } catch (err) {
+    return c.json({ error: String(err) }, 500);
+  }
 });
 
 function slugify(text: string): string {

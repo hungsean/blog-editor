@@ -275,7 +275,7 @@ function renderTagsField(tags) {
       <label>標籤 <small style="color:#666">(Enter 新增)</small></label>
       <div class="tags-input-wrap" id="tags-wrap">
         ${tags.map((t) => tagChip(t)).join("")}
-        <input class="tags-input" id="tags-input" type="text" placeholder="輸入標籤...">
+        <input class="tags-input" id="tags-input" type="text" placeholder="輸入標籤..." enterkeyhint="done" inputmode="text">
       </div>
     </div>`;
 }
@@ -298,18 +298,35 @@ function initTagsInput() {
     }
   });
 
+  function commitTag() {
+    const val = input.value.trim();
+    if (!val) return;
+    input.value = "";
+    wrap.insertBefore(parseHTML(tagChip(val)), input);
+    scheduleSave();
+  }
+
   input.addEventListener("keydown", (e) => {
-    if ((e.key === "Enter" || e.key === ",") && !e.isComposing) {
+    if (e.key === "," && !e.isComposing) {
       e.preventDefault();
-      const val = input.value.trim();
-      if (!val) return;
-      input.value = "";
-      wrap.insertBefore(parseHTML(tagChip(val)), input);
-      scheduleSave();
+      commitTag();
     } else if (e.key === "Backspace" && !input.value) {
       const chips = wrap.querySelectorAll(".tag-chip");
       if (chips.length) { chips[chips.length - 1].remove(); scheduleSave(); }
     }
+  });
+
+  // keyup is more reliable on mobile (Android IME sets isComposing=true in keydown)
+  input.addEventListener("keyup", (e) => {
+    if (e.key === "Enter" && !e.isComposing) {
+      e.preventDefault();
+      commitTag();
+    }
+  });
+
+  // mobile: add tag when user dismisses keyboard or taps elsewhere
+  input.addEventListener("blur", () => {
+    commitTag();
   });
 }
 

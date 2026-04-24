@@ -505,6 +505,34 @@ input[type="checkbox"] {
   .editor-wrap { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
 }
 
+@media (max-width: 768px) {
+  body.editor-page {
+    height: auto;
+    min-height: 100dvh;
+    overflow-y: auto;
+  }
+
+  .editor-container {
+    flex: none;
+    overflow: visible;
+    padding: 12px;
+  }
+
+  .editor-container main {
+    flex: none;
+    overflow: visible;
+  }
+
+  .editor-wrap {
+    flex: none;
+    grid-template-rows: 50vh 50vh;
+  }
+
+  #md-editor {
+    height: 50vh;
+  }
+}
+
 /* Flatpickr dark theme override */
 .flatpickr-calendar {
   background: var(--surface2) !important;

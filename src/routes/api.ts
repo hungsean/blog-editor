@@ -1,3 +1,27 @@
+/**
+ * ## api
+ *
+ * 所有 `/api/*` REST endpoint 的 Hono router。
+ *
+ * ### 端點一覽
+ * - `GET/POST /drafts` — 列表 / 新建草稿
+ * - `GET/PATCH/DELETE /drafts/:id` — 單篇 CRUD
+ * - `POST /drafts/:id/publish` — 對單篇開 GitHub PR
+ * - `POST /drafts/:id/translate` — 建立人工翻譯副本（直接複製內容）
+ * - `POST /drafts/:id/ai-translate` — 使用 OpenAI 翻譯後建立副本
+ * - `POST /drafts/:id/resync` — 從 GitHub 覆蓋本地草稿
+ * - `GET /drafts/:id/translations` — 取得相同 slug 的其他語言版本
+ * - `POST /batch-publish` — 多篇同時送出一個 PR
+ * - `POST /batch-delete` — 批量刪除草稿
+ * - `GET /github/posts` — 列出 GitHub 上的 .md 檔案
+ * - `POST /sync` — 將 GitHub 文章匯入本地 DB
+ * - `POST /upload` — 上傳圖片到 R2
+ * - `GET /translation-status` — 檢查 AI 翻譯是否啟用
+ *
+ * ### 已知限制
+ * - `publish` 與 `batch-publish` 的 frontmatter 序列化為自製格式，僅支援 string/boolean/array
+ * - `slug` 若為空，會以 `slugify(title)` 產生，CJK 字元會被移除
+ */
 import { Hono } from "hono";
 import { nanoid } from "nanoid";
 import { db } from "../lib/db";
@@ -433,6 +457,16 @@ api.post("/upload", async (c) => {
   }
 });
 
+/**
+ * 將文字轉換為 URL 安全的 slug。
+ *
+ * @param text - 任意標題字串
+ * @returns 小寫英數字以 `-` 連接的字串，最長 50 字元
+ *
+ * @remarks
+ * CJK 字元（Unicode 一–鿿）會被完全移除，非英數字元替換為 `-`。
+ * 純中文標題會產生空字串，呼叫端需自行 fallback（通常 fallback 為 draft ID）。
+ */
 function slugify(text: string): string {
   return text
     .toLowerCase()

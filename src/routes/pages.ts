@@ -1,3 +1,17 @@
+/**
+ * ## pages
+ *
+ * 伺服器端渲染的 HTML 頁面路由（Hono）。
+ *
+ * ### 頁面一覽
+ * - `GET /` → 草稿列表頁，JS 掛載點為 `/js/list.js`
+ * - `GET /editor` → 新建文章編輯器
+ * - `GET /editor/:id` → 編輯既有草稿，ID 透過 `globalThis.__DRAFT_ID__` 注入前端
+ *
+ * ### 已知限制
+ * - HTML 為 inline template，修改 UI 需直接編輯此檔案
+ * - `__DRAFT_ID__` 使用 `JSON.stringify` 序列化，避免 XSS；但若 ID 含特殊字元仍需注意
+ */
 import { Hono } from "hono";
 import { html, raw } from "hono/html";
 

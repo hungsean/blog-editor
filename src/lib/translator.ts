@@ -26,11 +26,18 @@ export function isTranslationEnabled(): boolean {
   return !!OPENAI_API_KEY;
 }
 
+type TranslationPreset = {
+  keywords: string[];
+  translations: Record<string, string>;
+  note: string;
+};
+
 /**
  * 呼叫 OpenAI API 翻譯文章的 title、description 與 markdown content。
  *
  * @param params.sourceLang - 來源語言代碼（`zh-tw` / `en` / `ja`）
  * @param params.targetLang - 目標語言代碼，若不在 `LANG_NAMES` 中會直接傳給 API
+ * @param params.presets - 常用翻譯設定，有出現在文章中的 keyword 才傳入，注入至 system prompt
  * @returns 翻譯後的 `{ title, description, content }`；content 末尾附有歸因說明
  * @throws 若 `OPENAI_API_KEY` 未設定，或 API 回傳非 2xx，或回應沒有 content
  *
@@ -45,14 +52,28 @@ export async function translateDraft(params: {
   content: string;
   sourceLang: string;
   targetLang: string;
+  presets?: TranslationPreset[];
 }): Promise<{ title: string; description: string; content: string }> {
   if (!OPENAI_API_KEY) {
     throw new Error("OPENAI_API_KEY is not configured");
   }
 
-  const { title, description, content, sourceLang, targetLang } = params;
+  const { title, description, content, sourceLang, targetLang, presets } = params;
   const sourceName = LANG_NAMES[sourceLang] ?? sourceLang;
   const targetName = LANG_NAMES[targetLang] ?? targetLang;
+
+  let glossarySection = "";
+  if (presets && presets.length > 0) {
+    const lines = presets.map((p) => {
+      const kwList = p.keywords.join(", ");
+      const transEntries = Object.entries(p.translations)
+        .map(([lang, val]) => `${lang}: "${val}"`)
+        .join(", ");
+      const notePart = p.note ? `\n  Note: ${p.note}` : "";
+      return `- Keywords: [${kwList}] → ${transEntries}${notePart}`;
+    });
+    glossarySection = `\nFixed Translation Glossary (MUST follow exactly):\n${lines.join("\n")}\n`;
+  }
 
   const systemPrompt = `You are a professional translator specializing in technical blog posts.
 Translate from ${sourceName} to ${targetName}.
@@ -61,7 +82,7 @@ Rules:
 - Do NOT translate content inside code blocks (\`\`\`...\`\`\`)
 - Do NOT translate inline code (\`...\`)
 - Do NOT translate URLs, file paths, or technical identifiers
-- Return a JSON object with keys: title, description, content`;
+- Return a JSON object with keys: title, description, content${glossarySection}`;
 
   const userPayload = JSON.stringify({ title, description, content });
 

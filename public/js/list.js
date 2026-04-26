@@ -360,3 +360,221 @@ syncModalConfirm.addEventListener("click", async () => {
 });
 
 loadDrafts();
+
+// ── Settings modal ────────────────────────────────────────────────────────────
+
+const settingsModal = document.getElementById("settings-modal");
+let editingPresetId = null;
+let presetsData = [];
+
+function openSettingsModal() {
+  settingsModal.style.display = "flex";
+  loadPresets();
+}
+
+function closeSettingsModal() {
+  settingsModal.style.display = "none";
+  hidePresetForm();
+}
+
+document.getElementById("btn-settings").addEventListener("click", openSettingsModal);
+document.getElementById("settings-modal-close").addEventListener("click", closeSettingsModal);
+settingsModal.addEventListener("click", (e) => { if (e.target === settingsModal) closeSettingsModal(); });
+
+// ── Presets list ──────────────────────────────────────────────────────────────
+
+async function loadPresets() {
+  const listEl = document.getElementById("presets-list");
+  listEl.innerHTML = `<p class="loading">載入中...</p>`;
+  try {
+    const res = await fetch("/api/presets");
+    presetsData = await res.json();
+    renderPresetsList();
+  } catch (e) {
+    listEl.innerHTML = `<p class="loading">載入失敗：${escHtml(e.message)}</p>`;
+  }
+}
+
+function renderPresetsList() {
+  const listEl = document.getElementById("presets-list");
+  if (presetsData.length === 0) {
+    listEl.innerHTML = `<p style="color:var(--text-muted);font-size:0.85rem;padding:12px 0">尚未設定任何常用翻譯。</p>`;
+    return;
+  }
+  listEl.innerHTML = presetsData.map(presetItemHtml).join("");
+  document.querySelectorAll(".btn-preset-edit").forEach((btn) => {
+    btn.addEventListener("click", () => openPresetForm(btn.dataset.id));
+  });
+  document.querySelectorAll(".btn-preset-delete").forEach((btn) => {
+    btn.addEventListener("click", () => deletePreset(btn.dataset.id));
+  });
+}
+
+function presetItemHtml(p) {
+  const keywords = JSON.parse(p.keywords || "[]");
+  const translations = JSON.parse(p.translations || "{}");
+  const langs = ["zh-tw", "en", "ja"];
+  const transText = langs
+    .filter((l) => translations[l])
+    .map((l) => `${l}: ${escHtml(translations[l])}`)
+    .join(" · ");
+  const kwChips = keywords.map((k) => `<span class="preset-keyword-chip">${escHtml(k)}</span>`).join("");
+  return `
+    <div class="preset-item" data-id="${p.id}">
+      <div class="preset-item-info">
+        <div class="preset-keywords">${kwChips}</div>
+        ${transText ? `<div class="preset-translations">${transText}</div>` : ""}
+        ${p.note ? `<div class="preset-note">${escHtml(p.note)}</div>` : ""}
+      </div>
+      <div class="preset-item-actions">
+        <button class="btn btn-secondary btn-preset-edit" data-id="${p.id}" style="font-size:0.75rem;padding:4px 10px">編輯</button>
+        <button class="btn btn-danger btn-preset-delete" data-id="${p.id}" style="font-size:0.75rem;padding:4px 10px">刪除</button>
+      </div>
+    </div>`;
+}
+
+// ── Preset form ───────────────────────────────────────────────────────────────
+
+function openPresetForm(presetId = null) {
+  editingPresetId = presetId;
+  resetPresetForm();
+  if (presetId) {
+    const preset = presetsData.find((p) => p.id === presetId);
+    if (preset) populatePresetForm(preset);
+  }
+  document.getElementById("preset-form-wrap").style.display = "block";
+  document.getElementById("preset-keywords-input").focus();
+}
+
+function hidePresetForm() {
+  document.getElementById("preset-form-wrap").style.display = "none";
+  resetPresetForm();
+  editingPresetId = null;
+}
+
+function resetPresetForm() {
+  const wrap = document.getElementById("preset-keywords-wrap");
+  wrap.querySelectorAll(".tag-chip").forEach((el) => el.remove());
+  document.getElementById("preset-keywords-input").value = "";
+  document.getElementById("preset-trans-zh-tw").value = "";
+  document.getElementById("preset-trans-en").value = "";
+  document.getElementById("preset-trans-ja").value = "";
+  document.getElementById("preset-note").value = "";
+}
+
+function populatePresetForm(preset) {
+  const keywords = JSON.parse(preset.keywords || "[]");
+  const translations = JSON.parse(preset.translations || "{}");
+  const wrap = document.getElementById("preset-keywords-wrap");
+  const input = document.getElementById("preset-keywords-input");
+  keywords.forEach((kw) => {
+    const chip = createPresetKeywordChip(kw);
+    wrap.insertBefore(chip, input);
+  });
+  document.getElementById("preset-trans-zh-tw").value = translations["zh-tw"] || "";
+  document.getElementById("preset-trans-en").value = translations["en"] || "";
+  document.getElementById("preset-trans-ja").value = translations["ja"] || "";
+  document.getElementById("preset-note").value = preset.note || "";
+}
+
+function createPresetKeywordChip(kw) {
+  const span = document.createElement("span");
+  span.className = "tag-chip";
+  span.textContent = kw;
+  const btn = document.createElement("button");
+  btn.className = "tag-chip-remove";
+  btn.textContent = "×";
+  btn.addEventListener("click", () => span.remove());
+  span.appendChild(btn);
+  return span;
+}
+
+// Keywords tag input
+(function initPresetKeywordsInput() {
+  const wrap = document.getElementById("preset-keywords-wrap");
+  const input = document.getElementById("preset-keywords-input");
+
+  function commitKeyword() {
+    const val = input.value.replaceAll(",", "").trim();
+    if (!val) return;
+    input.value = "";
+    wrap.insertBefore(createPresetKeywordChip(val), input);
+  }
+
+  input.addEventListener("keydown", (e) => {
+    if ((e.key === "Enter" || e.key === ",") && !e.isComposing) {
+      e.preventDefault();
+      commitKeyword();
+    } else if (e.key === "Backspace" && !input.value) {
+      const chips = wrap.querySelectorAll(".tag-chip");
+      if (chips.length) chips[chips.length - 1].remove();
+    }
+  });
+  input.addEventListener("blur", () => commitKeyword());
+})();
+
+function getPresetFormData() {
+  const wrap = document.getElementById("preset-keywords-wrap");
+  const keywords = [...wrap.querySelectorAll(".tag-chip")]
+    .map((el) => el.childNodes[0].textContent.trim())
+    .filter(Boolean);
+  const translations = {};
+  const zhVal = document.getElementById("preset-trans-zh-tw").value.trim();
+  const enVal = document.getElementById("preset-trans-en").value.trim();
+  const jaVal = document.getElementById("preset-trans-ja").value.trim();
+  if (zhVal) translations["zh-tw"] = zhVal;
+  if (enVal) translations["en"] = enVal;
+  if (jaVal) translations["ja"] = jaVal;
+  const note = document.getElementById("preset-note").value.trim();
+  return { keywords, translations, note };
+}
+
+document.getElementById("btn-add-preset").addEventListener("click", () => openPresetForm(null));
+document.getElementById("btn-preset-cancel").addEventListener("click", hidePresetForm);
+
+document.getElementById("btn-preset-save").addEventListener("click", async () => {
+  const data = getPresetFormData();
+  if (data.keywords.length === 0) {
+    alert("請至少輸入一個關鍵字。");
+    return;
+  }
+  const saveBtn = document.getElementById("btn-preset-save");
+  saveBtn.disabled = true;
+  saveBtn.textContent = "儲存中...";
+  try {
+    const url = editingPresetId ? `/api/presets/${editingPresetId}` : "/api/presets";
+    const method = editingPresetId ? "PATCH" : "POST";
+    const res = await fetch(url, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) {
+      const err = await res.json();
+      alert(`儲存失敗：${err.error}`);
+      return;
+    }
+    hidePresetForm();
+    await loadPresets();
+  } catch (e) {
+    alert(`儲存失敗：${e.message}`);
+  } finally {
+    saveBtn.disabled = false;
+    saveBtn.textContent = "儲存";
+  }
+});
+
+async function deletePreset(id) {
+  if (!confirm("確定要刪除這個常用翻譯？")) return;
+  try {
+    const res = await fetch(`/api/presets/${id}`, { method: "DELETE" });
+    if (!res.ok) {
+      const err = await res.json();
+      alert(`刪除失敗：${err.error}`);
+      return;
+    }
+    await loadPresets();
+  } catch (e) {
+    alert(`刪除失敗：${e.message}`);
+  }
+}

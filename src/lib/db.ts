@@ -4,7 +4,7 @@
  * SQLite 資料庫初始化與結構定義。
  *
  * ### 資料流
- * 啟動時自動建立 DB → 建立 drafts 表格 → 執行欄位 migration
+ * 啟動時自動建立 DB → 建立 drafts 表格 → 執行欄位 migration → 建立 translation_presets 表格
  *
  * ### 已知限制
  * - 使用 top-level await（`Bun.write`），此模組只能在 Bun 環境中使用
@@ -35,6 +35,17 @@ db.exec(`
     pr_url      TEXT DEFAULT '',
     created_at  TEXT NOT NULL,
     updated_at  TEXT NOT NULL
+  )
+`);
+
+db.exec(`
+  CREATE TABLE IF NOT EXISTS translation_presets (
+    id           TEXT PRIMARY KEY,
+    keywords     TEXT NOT NULL DEFAULT '[]',
+    translations TEXT NOT NULL DEFAULT '{}',
+    note         TEXT NOT NULL DEFAULT '',
+    created_at   TEXT NOT NULL,
+    updated_at   TEXT NOT NULL
   )
 `);
 

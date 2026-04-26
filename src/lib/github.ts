@@ -1,3 +1,17 @@
+/**
+ * ## github
+ *
+ * 封裝所有 GitHub REST API 操作，供文章同步與發布 PR 使用。
+ *
+ * ### 資料流
+ * - 讀取：`listGithubPosts` → `getGithubFile` → `parseFrontmatter`
+ * - 寫入：`openPR` / `openBatchPR` → 建立 blob → tree → commit → branch → PR
+ *
+ * ### 已知限制
+ * - 使用 Git Tree API（recursive）一次取得整棵樹，大型 repo 可能觸發 GitHub 的 100k 節點截斷限制
+ * - `openPR` 和 `openBatchPR` 都使用隨機 branch 名稱，若同一篇文章重複發布不會覆蓋既有 PR
+ * - 所有環境變數於模組載入時讀取，執行期間更改無效
+ */
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN ?? "";
 const GITHUB_OWNER = process.env.GITHUB_OWNER ?? "";
 const GITHUB_REPO = process.env.GITHUB_REPO ?? "";
@@ -9,6 +23,14 @@ if (!GITHUB_TOKEN || !GITHUB_OWNER || !GITHUB_REPO) {
 
 const BASE_URL = "https://api.github.com";
 
+/**
+ * 帶有 GitHub API 認證標頭的 fetch 封裝。
+ *
+ * @param path - API 路徑，不含 base URL（例如 `/repos/owner/repo/pulls`）
+ * @param options - 標準 `RequestInit`，headers 會被合併而非覆蓋
+ * @returns 解析後的 JSON 回應
+ * @throws 若 HTTP 狀態碼非 2xx，拋出含錯誤訊息的 `Error`
+ */
 async function githubFetch(path: string, options: RequestInit = {}) {
   const res = await fetch(`${BASE_URL}${path}`, {
     ...options,
@@ -77,6 +99,18 @@ export interface BatchPRFile {
   githubSha?: string;
 }
 
+/**
+ * 將多篇文章以單一 commit 建立一個 PR。
+ *
+ * @param files - 要發布的文章陣列，每筆含 frontmatter 字串與 markdown 內容
+ * @returns `{ prUrl }` — 開啟的 GitHub PR 網址
+ * @throws 任何 GitHub API 錯誤會直接往上拋
+ *
+ * @remarks
+ * 實作流程：取得 base commit SHA → 建立所有 blob → 建立新 tree → 建立 commit → 建立 branch → 開 PR。
+ * 若 `file.githubPath` 有值，會更新該路徑的既有檔案；否則依 `lang/slug` 建立新路徑。
+ * Branch 名稱帶有隨機 suffix，重複呼叫不會衝突，但也不會更新同一個 PR。
+ */
 export async function openBatchPR(files: BatchPRFile[]): Promise<{ prUrl: string }> {
   const today = new Date().toISOString().slice(0, 10);
   const shortId = Math.random().toString(36).slice(2, 7);
@@ -145,6 +179,18 @@ export async function openBatchPR(files: BatchPRFile[]): Promise<{ prUrl: string
   return { prUrl: pr.html_url };
 }
 
+/**
+ * 為單篇文章建立（或更新）GitHub PR。
+ *
+ * @param params.githubPath - 若提供，更新此路徑的既有檔案；否則依 `lang/slug` 建新檔
+ * @param params.githubSha - 更新既有檔案時必須提供，否則 GitHub API 會回傳 409 衝突
+ * @returns `{ prUrl, filePath }` — PR 網址與檔案路徑
+ * @throws 任何 GitHub API 錯誤會直接往上拋
+ *
+ * @remarks
+ * Branch 名稱格式為 `blog/{date}-{lang}-{slug}`，相同文章重複發布會因 branch 已存在而失敗。
+ * 這是刻意設計，避免意外覆蓋進行中的 PR。
+ */
 export async function openPR(params: {
   title: string;
   slug: string;

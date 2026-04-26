@@ -1,3 +1,16 @@
+/**
+ * ## db
+ *
+ * SQLite 資料庫初始化與結構定義。
+ *
+ * ### 資料流
+ * 啟動時自動建立 DB → 建立 drafts 表格 → 執行欄位 migration
+ *
+ * ### 已知限制
+ * - 使用 top-level await（`Bun.write`），此模組只能在 Bun 環境中使用
+ * - Migration 策略為 ALTER TABLE ADD COLUMN，僅支援新增欄位，不支援刪除或改型別
+ * - DB 路徑預設為 `data/blog-editor.db`，可透過 `DB_PATH` 環境變數覆蓋
+ */
 import { Database } from "bun:sqlite";
 import { join } from "path";
 

@@ -104,3 +104,41 @@ bun --hot ./index.ts
 ```
 
 For more information, read the Bun API docs in `node_modules/bun-types/docs/**.mdx`.
+
+## 文件規範
+
+- 修改任何函式的行為時，必須同步更新該函式的 JSDoc
+- `@remarks` 區塊用來記錄 **why**，不只是 what（限制、地雷、設計決策）
+- edge case 和注意事項必須寫在最靠近程式碼的地方，不要只放在 README
+- 架構層級的決策和模組關係記錄在此 CLAUDE.md 的「專案架構」章節
+- 顯而易見的函式（純 getter、簡單映射）不需要 JSDoc
+
+## 專案架構
+
+```
+src/
+├── lib/
+│   ├── db.ts          # SQLite 初始化與 migrations（Bun 啟動時執行，top-level await）
+│   ├── frontmatter.ts # Markdown frontmatter 解析與轉換（純函式，無 side effect）
+│   ├── github.ts      # GitHub REST API 封裝：讀取文章、開 PR
+│   ├── r2.ts          # Cloudflare R2 圖片上傳（S3 相容 API）
+│   └── translator.ts  # OpenAI API 翻譯功能
+└── routes/
+    ├── api.ts         # 所有 /api/* REST endpoint（Hono router）
+    └── pages.ts       # 伺服器端 HTML 渲染頁面（列表頁、編輯器頁）
+```
+
+### 模組依賴關係
+
+```
+api.ts → db.ts, github.ts, frontmatter.ts, translator.ts, r2.ts
+pages.ts → （無依賴，純 HTML template）
+github.ts → frontmatter.ts（呼叫端解析，github 本身不依賴）
+```
+
+### 關鍵設計決策
+
+- **slug 策略**：lang 編碼在目錄路徑中（`src/content/blog/{lang}/{slug}.md`），frontmatter 內不存 lang
+- **extra fields**：不在 schema 內的 frontmatter 欄位一律存入 `fields`（JSON 字串），保持彈性
+- **GitHub 寫入**：使用低階 Git Object API（blob → tree → commit → ref），避免 Contents API 的單檔限制
+- **Migration 策略**：以 try/catch 包裹 `ALTER TABLE ADD COLUMN`，column 已存在時靜默忽略

@@ -619,3 +619,63 @@ input[type="checkbox"] {
 .flatpickr-input:focus { border-color: var(--primary) !important; }
 
 .loading { color: var(--text-muted); text-align: center; padding: 40px; }
+
+/* ── Settings modal ─────────────────────────────────────────────────────────── */
+.modal-settings { width: min(680px, 95vw); }
+
+.settings-section { margin-bottom: 24px; }
+.settings-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.settings-section-header h3 { font-size: 1rem; font-weight: 600; }
+.settings-hint { font-size: 0.8rem; color: var(--text-muted); margin-bottom: 12px; }
+
+/* Preset form */
+.preset-form {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 12px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+.preset-form-field { display: flex; flex-direction: column; gap: 4px; }
+.preset-form-field label { font-size: 0.8rem; color: var(--text-muted); }
+.preset-form-field.full-width { grid-column: 1 / -1; }
+.preset-form-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* Preset list items */
+.preset-item {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.preset-item:last-child { margin-bottom: 0; }
+.preset-item-info { flex: 1; min-width: 0; }
+.preset-keywords { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 6px; }
+.preset-keyword-chip {
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text);
+}
+.preset-translations { font-size: 0.78rem; color: var(--text-muted); margin-bottom: 4px; }
+.preset-note { font-size: 0.75rem; color: var(--text-muted); font-style: italic; }
+.preset-item-actions { display: flex; gap: 6px; flex-shrink: 0; }

@@ -17,6 +17,8 @@
  * - `POST /sync` — 將 GitHub 文章匯入本地 DB
  * - `POST /upload` — 上傳圖片到 R2
  * - `GET /translation-status` — 檢查 AI 翻譯是否啟用
+ * - `GET/POST /presets` — 常用翻譯設定列表 / 新增
+ * - `GET/PATCH/DELETE /presets/:id` — 單筆常用翻譯 CRUD
  *
  * ### 已知限制
  * - `publish` 與 `batch-publish` 的 frontmatter 序列化為自製格式，僅支援 string/boolean/array
@@ -29,6 +31,15 @@ import { openPR, openBatchPR, listGithubPosts, getGithubFile } from "../lib/gith
 import { parseFrontmatter, frontmatterToDraft, extractFromPath } from "../lib/frontmatter";
 import { translateDraft, isTranslationEnabled } from "../lib/translator";
 import { uploadToR2, isR2Enabled } from "../lib/r2";
+
+type TranslationPreset = {
+  id: string;
+  keywords: string;
+  translations: string;
+  note: string;
+  created_at: string;
+  updated_at: string;
+};
 
 type Draft = {
   id: string;
@@ -385,12 +396,23 @@ api.post("/drafts/:id/ai-translate", async (c) => {
   const slug = source.slug || slugify(source.title) || source.id;
 
   try {
+    const allPresets = db.query("SELECT * FROM translation_presets").all() as TranslationPreset[];
+    const textToSearch = [source.title, source.description, source.content].join(" ").toLowerCase();
+    const relevantPresets = allPresets
+      .map((p) => ({
+        keywords: JSON.parse(p.keywords) as string[],
+        translations: JSON.parse(p.translations) as Record<string, string>,
+        note: p.note,
+      }))
+      .filter((p) => p.keywords.some((kw) => textToSearch.includes(kw.toLowerCase())));
+
     const translated = await translateDraft({
       title: source.title,
       description: source.description,
       content: source.content,
       sourceLang: source.lang,
       targetLang,
+      presets: relevantPresets,
     });
 
     const now = new Date().toISOString();
@@ -455,6 +477,81 @@ api.post("/upload", async (c) => {
   } catch (err) {
     return c.json({ error: String(err) }, 500);
   }
+});
+
+// ── Translation Presets CRUD ──────────────────────────────────────────────────
+
+// GET /api/presets
+api.get("/presets", (c) => {
+  const presets = db.query("SELECT * FROM translation_presets ORDER BY updated_at DESC").all() as TranslationPreset[];
+  return c.json(presets);
+});
+
+// POST /api/presets
+api.post("/presets", async (c) => {
+  const body = await c.req.json().catch(() => ({})) as {
+    keywords?: string[];
+    translations?: Record<string, string>;
+    note?: string;
+  };
+  if (!Array.isArray(body.keywords) || body.keywords.length === 0) {
+    return c.json({ error: "keywords must be a non-empty array" }, 400);
+  }
+  const now = new Date().toISOString();
+  const id = nanoid();
+  db.query(
+    `INSERT INTO translation_presets (id, keywords, translations, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`
+  ).run(
+    id,
+    JSON.stringify(body.keywords),
+    JSON.stringify(body.translations ?? {}),
+    body.note ?? "",
+    now,
+    now,
+  );
+  const preset = db.query("SELECT * FROM translation_presets WHERE id = ?").get(id) as TranslationPreset;
+  return c.json(preset, 201);
+});
+
+// GET /api/presets/:id
+api.get("/presets/:id", (c) => {
+  const id = c.req.param("id");
+  const preset = db.query("SELECT * FROM translation_presets WHERE id = ?").get(id) as TranslationPreset | null;
+  if (!preset) return c.json({ error: "Not found" }, 404);
+  return c.json(preset);
+});
+
+// PATCH /api/presets/:id
+api.patch("/presets/:id", async (c) => {
+  const id = c.req.param("id");
+  const existing = db.query("SELECT * FROM translation_presets WHERE id = ?").get(id) as TranslationPreset | null;
+  if (!existing) return c.json({ error: "Not found" }, 404);
+
+  const body = await c.req.json().catch(() => ({})) as {
+    keywords?: string[];
+    translations?: Record<string, string>;
+    note?: string;
+  };
+  const keywords = Array.isArray(body.keywords) ? JSON.stringify(body.keywords) : existing.keywords;
+  const translations = body.translations == null ? existing.translations : JSON.stringify(body.translations);
+  const note = body.note ?? existing.note;
+  const now = new Date().toISOString();
+
+  db.query(
+    `UPDATE translation_presets SET keywords = ?, translations = ?, note = ?, updated_at = ? WHERE id = ?`
+  ).run(keywords, translations, note, now, id);
+
+  const preset = db.query("SELECT * FROM translation_presets WHERE id = ?").get(id) as TranslationPreset;
+  return c.json(preset);
+});
+
+// DELETE /api/presets/:id
+api.delete("/presets/:id", (c) => {
+  const id = c.req.param("id");
+  const existing = db.query("SELECT * FROM translation_presets WHERE id = ?").get(id) as TranslationPreset | null;
+  if (!existing) return c.json({ error: "Not found" }, 404);
+  db.query("DELETE FROM translation_presets WHERE id = ?").run(id);
+  return c.json({ ok: true });
 });
 
 /**

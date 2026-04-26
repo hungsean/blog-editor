@@ -43,6 +43,7 @@ function listPage() {
     <header>
       <h1>Blog Editor</h1>
       <div class="header-actions">
+        <button id="btn-settings" class="btn btn-secondary" title="設定">⚙</button>
         <button id="btn-select-mode" class="btn btn-secondary">☑ 選取模式</button>
         <button id="btn-sync" class="btn btn-secondary">↓ 從 GitHub 同步</button>
         <button id="btn-new" class="btn btn-primary">+ 新增文章</button>
@@ -51,6 +52,58 @@ function listPage() {
     <main id="drafts-list">
       <p class="loading">載入中...</p>
     </main>
+  </div>
+
+  <!-- Settings Modal -->
+  <div id="settings-modal" class="modal-overlay" style="display:none">
+    <div class="modal modal-settings">
+      <div class="modal-header">
+        <h2>設定</h2>
+        <button id="settings-modal-close" class="btn btn-secondary">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="settings-section">
+          <div class="settings-section-header">
+            <h3>常用翻譯設定</h3>
+            <button id="btn-add-preset" class="btn btn-primary" style="font-size:0.8rem;padding:6px 12px">+ 新增</button>
+          </div>
+          <p class="settings-hint">設定特定詞彙的固定翻譯，AI 翻譯時會自動套用對應詞彙。</p>
+          <div id="preset-form-wrap" style="display:none">
+            <div class="preset-form">
+              <div class="preset-form-field full-width">
+                <label>關鍵字 <small>（Enter 或逗號新增，可多個）</small></label>
+                <div class="tags-input-wrap" id="preset-keywords-wrap">
+                  <input class="tags-input" id="preset-keywords-input" type="text" placeholder="輸入關鍵字...">
+                </div>
+              </div>
+              <div class="preset-form-field">
+                <label>繁體中文 (zh-tw)</label>
+                <input class="field-input" type="text" id="preset-trans-zh-tw" placeholder="中文翻譯">
+              </div>
+              <div class="preset-form-field">
+                <label>English (en)</label>
+                <input class="field-input" type="text" id="preset-trans-en" placeholder="English translation">
+              </div>
+              <div class="preset-form-field">
+                <label>日本語 (ja)</label>
+                <input class="field-input" type="text" id="preset-trans-ja" placeholder="日本語訳">
+              </div>
+              <div class="preset-form-field full-width">
+                <label>補充說明</label>
+                <textarea class="field-input" id="preset-note" rows="2" placeholder="解釋這個翻譯的背景或用途"></textarea>
+              </div>
+              <div class="preset-form-actions">
+                <button id="btn-preset-cancel" class="btn btn-secondary">取消</button>
+                <button id="btn-preset-save" class="btn btn-primary">儲存</button>
+              </div>
+            </div>
+          </div>
+          <div id="presets-list">
+            <p class="loading">載入中...</p>
+          </div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- Sync Modal -->

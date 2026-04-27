@@ -54,7 +54,6 @@ type Draft = {
   pr_url: string;
   github_path: string;
   github_sha: string;
-  source: string;
   created_at: string;
   updated_at: string;
 };
@@ -64,7 +63,7 @@ const api = new Hono();
 // GET /api/drafts
 api.get("/drafts", (c) => {
   const drafts = db
-    .query("SELECT id, title, lang, slug, status, pr_url, source, created_at, updated_at FROM drafts ORDER BY updated_at DESC")
+    .query("SELECT id, title, lang, slug, status, pr_url, github_path, github_sha, created_at, updated_at FROM drafts ORDER BY DATE(json_extract(fields, '$.pubDate')) DESC, updated_at DESC")
     .all() as Draft[];
   return c.json(drafts);
 });
@@ -325,8 +324,8 @@ api.post("/sync", async (c) => {
       } else {
         const newId = nanoid();
         db.query(
-          `INSERT INTO drafts (id, title, lang, slug, description, tags, fields, content, status, pr_url, github_path, github_sha, source, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft', '', ?, ?, 'github', ?, ?)`
+          `INSERT INTO drafts (id, title, lang, slug, description, tags, fields, content, status, pr_url, github_path, github_sha, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft', '', ?, ?, ?, ?)`
         ).run(newId, title, lang, slug, description, tags, fields, mdBody, path, sha, now, now);
         imported.push(path);
       }

@@ -79,15 +79,17 @@ function draftCard(d) {
   const statusBadge =
     d.status === "pr_opened"
       ? `<span class="badge badge-pr">PR 已開</span>`
-      : `<span class="badge badge-draft">草稿</span>`;
-  const sourceBadge = d.source === "github"
+      : d.status === "published"
+        ? `<span class="badge badge-published">已發布</span>`
+        : `<span class="badge badge-draft">草稿</span>`;
+  const sourceBadge = d.github_path
     ? `<span class="badge badge-github">GitHub</span>`
     : "";
   const prLink =
     d.status === "pr_opened" && d.pr_url
       ? `<a href="${d.pr_url}" target="_blank" style="font-size:0.75rem;color:#22c55e">查看 PR →</a>`
       : "";
-  const resyncBtn = d.source === "github"
+  const resyncBtn = d.github_path
     ? `<button class="btn btn-secondary btn-resync" data-id="${d.id}" style="font-size:0.75rem;padding:0.2rem 0.5rem">重新同步</button>`
     : "";
 
@@ -267,7 +269,39 @@ function closeSyncModal() {
   syncModal.style.display = "none";
 }
 
-document.getElementById("btn-sync").addEventListener("click", openSyncModal);
+document.getElementById("btn-sync").addEventListener("click", syncAllPosts);
+
+async function syncAllPosts() {
+  const btn = document.getElementById("btn-sync");
+  btn.disabled = true;
+  btn.textContent = "同步中...";
+  try {
+    const posts = await fetch("/api/github/posts").then((r) => r.json());
+    if (posts.error) throw new Error(posts.error);
+    if (posts.length === 0) { alert("GitHub 上沒有找到文章。"); return; }
+
+    const paths = posts.map((p) => p.path);
+    const res = await fetch("/api/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paths }),
+    });
+    const data = await res.json();
+
+    const importedCount = data.imported?.length ?? 0;
+    const updatedCount = data.updated?.length ?? 0;
+    const errorCount = data.errors?.length ?? 0;
+    let msg = `同步完成！新匯入 ${importedCount} 篇，更新 ${updatedCount} 篇。`;
+    if (errorCount > 0) msg += `\n錯誤 ${errorCount} 篇：\n${data.errors.join("\n")}`;
+    alert(msg);
+    loadDrafts();
+  } catch (e) {
+    alert(`同步失敗：${e.message}`);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "↓ 從 GitHub 同步";
+  }
+}
 document.getElementById("sync-modal-close").addEventListener("click", closeSyncModal);
 document.getElementById("sync-modal-cancel").addEventListener("click", closeSyncModal);
 syncModal.addEventListener("click", (e) => { if (e.target === syncModal) closeSyncModal(); });

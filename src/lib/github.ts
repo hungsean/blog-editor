@@ -15,7 +15,7 @@
 const GITHUB_TOKEN = process.env.GITHUB_TOKEN ?? "";
 const GITHUB_OWNER = process.env.GITHUB_OWNER ?? "";
 const GITHUB_REPO = process.env.GITHUB_REPO ?? "";
-const GITHUB_DEFAULT_BRANCH = process.env.GITHUB_DEFAULT_BRANCH ?? "main";
+export const GITHUB_DEFAULT_BRANCH = process.env.GITHUB_DEFAULT_BRANCH ?? "main";
 
 if (!GITHUB_TOKEN || !GITHUB_OWNER || !GITHUB_REPO) {
   console.warn("[github] GITHUB_TOKEN / GITHUB_OWNER / GITHUB_REPO 未設定，GitHub 功能將無法使用");
@@ -82,7 +82,7 @@ export async function listGithubPosts(): Promise<GithubPost[]> {
  */
 export async function getGithubFile(path: string): Promise<{ content: string; sha: string }> {
   const data = await githubFetch(
-    `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${path}`
+    `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${path}?ref=${GITHUB_DEFAULT_BRANCH}`
   ) as { content: string; sha: string };
   const content = Buffer.from(data.content, "base64").toString("utf-8");
   return { content, sha: data.sha };
@@ -191,6 +191,48 @@ export async function openBatchPR(files: BatchPRFile[]): Promise<{ prUrl: string
  * Branch 名稱格式為 `blog/{date}-{lang}-{slug}`，相同文章重複發布會因 branch 已存在而失敗。
  * 這是刻意設計，避免意外覆蓋進行中的 PR。
  */
+export interface PRStatus {
+  number: number;
+  state: string;
+  merged: boolean;
+  head: { ref: string };
+  base: { ref: string };
+}
+
+export interface PRFile {
+  filename: string;
+  sha: string;
+  status: string;
+}
+
+/**
+ * 取得 PR 的狀態，包含是否已合併。
+ */
+export async function getPR(prNumber: number): Promise<PRStatus> {
+  return githubFetch(
+    `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/pulls/${prNumber}`
+  ) as Promise<PRStatus>;
+}
+
+/**
+ * 取得 PR 變更的檔案清單。
+ */
+export async function getPRFiles(prNumber: number): Promise<PRFile[]> {
+  return githubFetch(
+    `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/pulls/${prNumber}/files`
+  ) as Promise<PRFile[]>;
+}
+
+/**
+ * 取得指定路徑在預設分支上的目前 SHA。
+ */
+export async function getFileSha(path: string): Promise<string> {
+  const data = await githubFetch(
+    `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${path}?ref=${GITHUB_DEFAULT_BRANCH}`
+  ) as { sha: string };
+  return data.sha;
+}
+
 export async function openPR(params: {
   title: string;
   slug: string;

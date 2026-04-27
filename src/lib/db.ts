@@ -53,7 +53,6 @@ db.exec(`
 for (const [col, def] of [
   ["github_path", "TEXT DEFAULT ''"],
   ["github_sha",  "TEXT DEFAULT ''"],
-  ["source",      "TEXT DEFAULT 'local'"],
   ["slug",        "TEXT DEFAULT ''"],
 ] as const) {
   try {

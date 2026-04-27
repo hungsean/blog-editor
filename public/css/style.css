@@ -159,9 +159,10 @@ h1 { font-size: 1.5rem; font-weight: 700; }
   font-weight: 600;
   text-transform: uppercase;
 }
-.badge-draft { background: var(--surface2); color: var(--text-muted); }
-.badge-pr { background: #1a3a1a; color: var(--success); }
-.badge-github { background: #1a1f3a; color: #818cf8; }
+.badge-draft     { background: var(--surface2); color: var(--text-muted); }
+.badge-pr        { background: #1a3a1a; color: var(--success); }
+.badge-published { background: #1a2e3a; color: #38bdf8; }
+.badge-github    { background: #1a1f3a; color: #818cf8; }
 
 /* Modal */
 .modal-overlay {

@@ -82,7 +82,7 @@ export async function listGithubPosts(): Promise<GithubPost[]> {
  */
 export async function getGithubFile(path: string): Promise<{ content: string; sha: string }> {
   const data = await githubFetch(
-    `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${path}`
+    `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${path}?ref=${GITHUB_DEFAULT_BRANCH}`
   ) as { content: string; sha: string };
   const content = Buffer.from(data.content, "base64").toString("utf-8");
   return { content, sha: data.sha };
@@ -228,7 +228,7 @@ export async function getPRFiles(prNumber: number): Promise<PRFile[]> {
  */
 export async function getFileSha(path: string): Promise<string> {
   const data = await githubFetch(
-    `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${path}`
+    `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${path}?ref=${GITHUB_DEFAULT_BRANCH}`
   ) as { sha: string };
   return data.sha;
 }

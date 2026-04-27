@@ -14,6 +14,8 @@ import { db } from "./db";
 import { getPR, getPRFiles, getFileSha, GITHUB_DEFAULT_BRANCH } from "./github";
 
 const INTERVAL_MS = Number(process.env.PR_CHECK_INTERVAL_MS ?? 60_000);
+const DEV = process.env.NODE_ENV !== "production";
+const devLog = (...args: unknown[]) => DEV && console.log(...args);
 
 type PrOpenedDraft = {
   id: string;
@@ -34,11 +36,16 @@ function extractPrNumber(prUrl: string): number | null {
 }
 
 async function checkOnce() {
+  devLog(`[prChecker] 開始檢查 pr_opened 文章...`);
   const drafts = db
     .query("SELECT id, title, pr_url FROM drafts WHERE status = 'pr_opened' AND pr_url != ''")
     .all() as PrOpenedDraft[];
 
-  if (drafts.length === 0) return;
+  if (drafts.length === 0) {
+    devLog(`[prChecker] 無待檢查的 pr_opened 文章`);
+    return;
+  }
+  devLog(`[prChecker] 找到 ${drafts.length} 篇待檢查文章`);
 
   for (const draft of drafts) {
     const prNumber = extractPrNumber(draft.pr_url);
@@ -48,7 +55,9 @@ async function checkOnce() {
     }
 
     try {
+      devLog(`[prChecker] 檢查 "${draft.title}" PR #${prNumber}...`);
       const pr = await getPR(prNumber);
+      devLog(`[prChecker] PR #${prNumber} 狀態: state=${pr.state}, merged=${pr.merged}`);
 
       if (pr.state === "closed" && !pr.merged) {
         const now = new Date().toISOString();
@@ -66,7 +75,10 @@ async function checkOnce() {
         continue;
       }
 
-      if (!pr.merged) continue;
+      if (!pr.merged) {
+        devLog(`[prChecker] PR #${prNumber} 尚未合併，略過`);
+        continue;
+      }
 
       const files = await getPRFiles(prNumber);
       const mdFile = files.find(
@@ -98,14 +110,22 @@ async function checkOnce() {
 }
 
 async function checkDraftsExistOnGithub() {
+  devLog(`[prChecker] 開始同步 draft 文章...`);
   const drafts = db
     .query(
       "SELECT id, title, lang, slug FROM drafts WHERE status = 'draft' AND slug != '' AND lang != '' AND github_path = ''"
     )
     .all() as LocalDraft[];
 
+  if (drafts.length === 0) {
+    devLog(`[prChecker] 無待同步的 draft 文章`);
+    return;
+  }
+  devLog(`[prChecker] 找到 ${drafts.length} 篇待同步 draft 文章`);
+
   for (const draft of drafts) {
     const path = `src/content/blog/${draft.lang}/${draft.slug}.md`;
+    devLog(`[prChecker] 檢查遠端是否存在 "${draft.title}" (${path})...`);
     try {
       const sha = await getFileSha(path);
       const now = new Date().toISOString();
@@ -118,6 +138,7 @@ async function checkDraftsExistOnGithub() {
       console.log(`[prChecker] "${draft.title}" 在遠端已存在，標記為 published`);
     } catch {
       // 404 = 遠端尚無此檔案，正常情況，略過
+      devLog(`[prChecker] "${draft.title}" 遠端尚無此檔案，略過`);
     }
   }
 }

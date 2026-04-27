@@ -113,7 +113,7 @@ async function checkDraftsExistOnGithub() {
   devLog(`[prChecker] 開始同步 draft 文章...`);
   const drafts = db
     .query(
-      "SELECT id, title, lang, slug FROM drafts WHERE status = 'draft' AND slug != '' AND lang != '' AND github_path = ''"
+      "SELECT id, title, lang, slug FROM drafts WHERE status = 'draft' AND slug != '' AND lang != ''"
     )
     .all() as LocalDraft[];
 
@@ -137,8 +137,12 @@ async function checkDraftsExistOnGithub() {
       ).run(path, sha, now, draft.id);
       console.log(`[prChecker] "${draft.title}" 在遠端已存在，標記為 published`);
     } catch {
-      // 404 = 遠端尚無此檔案，正常情況，略過
-      devLog(`[prChecker] "${draft.title}" 遠端尚無此檔案，略過`);
+      // 404 = 遠端尚無此檔案，清空 github_path / sha 確保狀態乾淨
+      const now = new Date().toISOString();
+      db.query(
+        `UPDATE drafts SET github_path = '', github_sha = '', updated_at = ? WHERE id = ?`
+      ).run(now, draft.id);
+      devLog(`[prChecker] "${draft.title}" 遠端尚無此檔案，清空 github_path/sha`);
     }
   }
 }

@@ -63,7 +63,7 @@ const api = new Hono();
 // GET /api/drafts
 api.get("/drafts", (c) => {
   const drafts = db
-    .query("SELECT id, title, lang, slug, status, pr_url, github_path, github_sha, created_at, updated_at FROM drafts ORDER BY updated_at DESC")
+    .query("SELECT id, title, lang, slug, status, pr_url, github_path, github_sha, created_at, updated_at FROM drafts ORDER BY DATE(json_extract(fields, '$.pubDate')) DESC, updated_at DESC")
     .all() as Draft[];
   return c.json(drafts);
 });

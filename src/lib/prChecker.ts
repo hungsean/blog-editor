@@ -85,7 +85,7 @@ async function checkOnce() {
 
       db.query(
         `UPDATE drafts
-         SET status = 'published', pr_url = '', source = 'github',
+         SET status = 'published', pr_url = '',
              github_path = ?, github_sha = ?, updated_at = ?
          WHERE id = ?`
       ).run(mdFile.filename, mdFile.sha, now, draft.id);
@@ -111,7 +111,7 @@ async function checkDraftsExistOnGithub() {
       const now = new Date().toISOString();
       db.query(
         `UPDATE drafts
-         SET status = 'published', source = 'github',
+         SET status = 'published',
              github_path = ?, github_sha = ?, updated_at = ?
          WHERE id = ?`
       ).run(path, sha, now, draft.id);

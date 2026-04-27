@@ -269,7 +269,39 @@ function closeSyncModal() {
   syncModal.style.display = "none";
 }
 
-document.getElementById("btn-sync").addEventListener("click", openSyncModal);
+document.getElementById("btn-sync").addEventListener("click", syncAllPosts);
+
+async function syncAllPosts() {
+  const btn = document.getElementById("btn-sync");
+  btn.disabled = true;
+  btn.textContent = "同步中...";
+  try {
+    const posts = await fetch("/api/github/posts").then((r) => r.json());
+    if (posts.error) throw new Error(posts.error);
+    if (posts.length === 0) { alert("GitHub 上沒有找到文章。"); return; }
+
+    const paths = posts.map((p) => p.path);
+    const res = await fetch("/api/sync", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ paths }),
+    });
+    const data = await res.json();
+
+    const importedCount = data.imported?.length ?? 0;
+    const updatedCount = data.updated?.length ?? 0;
+    const errorCount = data.errors?.length ?? 0;
+    let msg = `同步完成！新匯入 ${importedCount} 篇，更新 ${updatedCount} 篇。`;
+    if (errorCount > 0) msg += `\n錯誤 ${errorCount} 篇：\n${data.errors.join("\n")}`;
+    alert(msg);
+    loadDrafts();
+  } catch (e) {
+    alert(`同步失敗：${e.message}`);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "↓ 從 GitHub 同步";
+  }
+}
 document.getElementById("sync-modal-close").addEventListener("click", closeSyncModal);
 document.getElementById("sync-modal-cancel").addEventListener("click", closeSyncModal);
 syncModal.addEventListener("click", (e) => { if (e.target === syncModal) closeSyncModal(); });

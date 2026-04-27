@@ -79,15 +79,17 @@ function draftCard(d) {
   const statusBadge =
     d.status === "pr_opened"
       ? `<span class="badge badge-pr">PR 已開</span>`
-      : `<span class="badge badge-draft">草稿</span>`;
-  const sourceBadge = d.source === "github"
+      : d.status === "published"
+        ? `<span class="badge badge-published">已發布</span>`
+        : `<span class="badge badge-draft">草稿</span>`;
+  const sourceBadge = d.github_path
     ? `<span class="badge badge-github">GitHub</span>`
     : "";
   const prLink =
     d.status === "pr_opened" && d.pr_url
       ? `<a href="${d.pr_url}" target="_blank" style="font-size:0.75rem;color:#22c55e">查看 PR →</a>`
       : "";
-  const resyncBtn = d.source === "github"
+  const resyncBtn = d.github_path
     ? `<button class="btn btn-secondary btn-resync" data-id="${d.id}" style="font-size:0.75rem;padding:0.2rem 0.5rem">重新同步</button>`
     : "";
 

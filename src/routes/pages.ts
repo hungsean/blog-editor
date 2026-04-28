@@ -15,6 +15,8 @@
 import { Hono } from "hono";
 import { html, raw } from "hono/html";
 
+const BUILD_TIME = Date.now();
+
 const pages = new Hono();
 
 pages.get("/", (c) => {
@@ -36,7 +38,7 @@ function listPage() {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Blog Editor</title>
-  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/style.css?v=${BUILD_TIME}">
 </head>
 <body>
   <div class="container">
@@ -133,7 +135,7 @@ function listPage() {
     </div>
   </div>
 
-  <script src="/js/list.js"></script>
+  <script src="/js/list.js?v=${BUILD_TIME}"></script>
 </body>
 </html>`;
 }
@@ -146,8 +148,8 @@ function editorPage(id: string | null) {
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Blog Editor</title>
-  <link rel="stylesheet" href="/css/flatpickr.min.css">
-  <link rel="stylesheet" href="/css/style.css">
+  <link rel="stylesheet" href="/css/flatpickr.min.css?v=${BUILD_TIME}">
+  <link rel="stylesheet" href="/css/style.css?v=${BUILD_TIME}">
 </head>
 <body class="editor-page">
   <div class="editor-container">
@@ -177,7 +179,7 @@ function editorPage(id: string | null) {
   <script>
     globalThis.__DRAFT_ID__ = ${raw(JSON.stringify(draftId))};
   </script>
-  <script src="/js/editor.bundle.js"></script>
+  <script src="/js/editor.bundle.js?v=${BUILD_TIME}"></script>
 </body>
 </html>`;
 }

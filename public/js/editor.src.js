@@ -197,6 +197,8 @@ function renderFields() {
   initTagsInput();
   initDatePickers();
   initImageUploadForFields();
+  initOgGenerate();
+  initOgPreview();
 }
 
 function renderSlugField(slug, title) {
@@ -384,13 +386,24 @@ function renderField(f, value) {
     const label = f.label ?? f.key;
     const placeholder = f.placeholder ?? "https://";
     if (f.upload) {
+      const isOgImage = f.key === "ogImage";
       return `
         <div class="field-group">
           <label>${escHtml(label)}</label>
           <div style="display:flex;gap:0.5rem">
             <input type="url" data-key-extra="${f.key}" value="${escAttr(urlVal)}" placeholder="${escAttr(placeholder)}" inputmode="url" style="flex:1">
+            ${isOgImage ? `<button type="button" class="btn btn-secondary btn-preview-og" title="預覽 OG 圖片" style="white-space:nowrap;font-size:0.8rem;padding:0 0.7rem">👁</button>` : ""}
             <button type="button" class="btn btn-secondary btn-upload-field-image" data-upload-target="${f.key}" style="white-space:nowrap;font-size:0.8rem;padding:0 0.7rem">↑ 上傳</button>
+            ${isOgImage ? `<button type="button" class="btn btn-primary btn-generate-og" style="white-space:nowrap;font-size:0.8rem;padding:0 0.7rem">✦ 生成 OG</button>` : ""}
           </div>
+          ${isOgImage ? `
+          <div style="display:flex;align-items:center;gap:0.5rem;margin-top:0.4rem">
+            <label class="btn btn-secondary og-hero-pick-label" style="font-size:0.75rem;padding:4px 8px;cursor:pointer;white-space:nowrap">
+              封面圖（選填）
+              <input type="file" class="og-hero-file-input" accept="image/*" style="display:none">
+            </label>
+            <span class="og-hero-filename" style="font-size:0.75rem;color:#888;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px">未選取</span>
+          </div>` : ""}
           <input type="file" class="upload-field-file-input" data-upload-for="${f.key}" accept="image/*" style="display:none">
         </div>`;
     }
@@ -444,6 +457,89 @@ function initImageUploadForFields() {
         btn.textContent = origText;
       }
     });
+  });
+}
+
+function initOgGenerate() {
+  const generateBtn = fieldsForm.querySelector(".btn-generate-og");
+  const heroFileInput = fieldsForm.querySelector(".og-hero-file-input");
+  const heroFilename = fieldsForm.querySelector(".og-hero-filename");
+  const ogUrlInput = fieldsForm.querySelector('[data-key-extra="ogImage"]');
+  if (!generateBtn || !heroFileInput || !ogUrlInput) return;
+
+  let currentHeroToken = null;
+
+  heroFileInput.addEventListener("change", async () => {
+    const file = heroFileInput.files[0];
+    if (!file) return;
+    heroFileInput.value = "";
+
+    heroFilename.textContent = "上傳中...";
+    try {
+      const fd = new FormData();
+      fd.append("heroImage", file);
+      const res = await fetch(`/api/drafts/${draftId}/og-hero`, { method: "POST", body: fd });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "上傳失敗");
+      currentHeroToken = data.heroToken;
+      heroFilename.textContent = file.name;
+    } catch (e) {
+      currentHeroToken = null;
+      heroFilename.textContent = "上傳失敗";
+      alert(`封面圖上傳失敗：${e.message}`);
+    }
+  });
+
+  generateBtn.addEventListener("click", async () => {
+    clearTimeout(saveTimer);
+    await autoSave();
+
+    if (!confirm("確定要生成 OG 圖片？現有的 OG 圖片 URL 將被覆蓋。")) return;
+
+    generateBtn.disabled = true;
+    const origText = generateBtn.textContent;
+    generateBtn.textContent = "生成中...";
+
+    try {
+      const res = await fetch(`/api/drafts/${draftId}/generate-og`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(currentHeroToken ? { heroToken: currentHeroToken } : {}),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "生成失敗");
+
+      ogUrlInput.value = data.ogImageUrl;
+      if (data.draft) draft = data.draft;
+      scheduleSave();
+
+      currentHeroToken = null;
+      if (heroFilename) heroFilename.textContent = "未選取";
+    } catch (e) {
+      alert(`生成失敗：${e.message}`);
+    } finally {
+      generateBtn.disabled = false;
+      generateBtn.textContent = origText;
+    }
+  });
+}
+
+function initOgPreview() {
+  const previewBtn = fieldsForm.querySelector(".btn-preview-og");
+  const ogUrlInput = fieldsForm.querySelector('[data-key-extra="ogImage"]');
+  if (!previewBtn || !ogUrlInput) return;
+
+  previewBtn.addEventListener("click", () => {
+    const url = ogUrlInput.value.trim();
+    if (!url) { alert("尚未設定 OG 圖片 URL"); return; }
+    const noCache = url + (url.includes("?") ? "&" : "?") + "_t=" + Date.now();
+    const win = window.open("", "_blank", "width=1200,height=700,toolbar=0,menubar=0,scrollbars=1");
+    win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>OG 圖片預覽</title>
+<style>body{margin:0;background:#111;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;font-family:sans-serif;color:#ccc}
+img{max-width:100%;border:1px solid #333;display:block}
+p{margin:12px 0 4px;font-size:0.8rem;opacity:0.6;word-break:break-all;max-width:1200px;text-align:center}</style>
+</head><body><img src="${escAttr(noCache)}" alt="OG Image"><p>${escHtml(url)}</p></body></html>`);
+    win.document.close();
   });
 }
 

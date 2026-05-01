@@ -38,6 +38,9 @@ data/*.db
 data/*.db-shm
 data/*.db-wal
 
+data/fonts
+data/og-temp
+
 # build artifacts
 public/js/editor.bundle.js
 

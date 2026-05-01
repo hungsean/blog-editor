@@ -197,6 +197,7 @@ function renderFields() {
   initTagsInput();
   initDatePickers();
   initImageUploadForFields();
+  initOgGenerate();
 }
 
 function renderSlugField(slug, title) {
@@ -384,13 +385,23 @@ function renderField(f, value) {
     const label = f.label ?? f.key;
     const placeholder = f.placeholder ?? "https://";
     if (f.upload) {
+      const isOgImage = f.key === "ogImage";
       return `
         <div class="field-group">
           <label>${escHtml(label)}</label>
           <div style="display:flex;gap:0.5rem">
             <input type="url" data-key-extra="${f.key}" value="${escAttr(urlVal)}" placeholder="${escAttr(placeholder)}" inputmode="url" style="flex:1">
             <button type="button" class="btn btn-secondary btn-upload-field-image" data-upload-target="${f.key}" style="white-space:nowrap;font-size:0.8rem;padding:0 0.7rem">↑ 上傳</button>
+            ${isOgImage ? `<button type="button" class="btn btn-primary btn-generate-og" style="white-space:nowrap;font-size:0.8rem;padding:0 0.7rem">✦ 生成 OG</button>` : ""}
           </div>
+          ${isOgImage ? `
+          <div style="display:flex;align-items:center;gap:0.5rem;margin-top:0.4rem">
+            <label class="btn btn-secondary og-hero-pick-label" style="font-size:0.75rem;padding:4px 8px;cursor:pointer;white-space:nowrap">
+              封面圖（選填）
+              <input type="file" class="og-hero-file-input" accept="image/*" style="display:none">
+            </label>
+            <span class="og-hero-filename" style="font-size:0.75rem;color:#888;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:200px">未選取</span>
+          </div>` : ""}
           <input type="file" class="upload-field-file-input" data-upload-for="${f.key}" accept="image/*" style="display:none">
         </div>`;
     }
@@ -444,6 +455,60 @@ function initImageUploadForFields() {
         btn.textContent = origText;
       }
     });
+  });
+}
+
+function initOgGenerate() {
+  const generateBtn = fieldsForm.querySelector(".btn-generate-og");
+  const heroFileInput = fieldsForm.querySelector(".og-hero-file-input");
+  const heroFilename = fieldsForm.querySelector(".og-hero-filename");
+  const ogUrlInput = fieldsForm.querySelector('[data-key-extra="ogImage"]');
+  if (!generateBtn || !heroFileInput || !ogUrlInput) return;
+
+  heroFileInput.addEventListener("change", () => {
+    const file = heroFileInput.files[0];
+    heroFilename.textContent = file ? file.name : "未選取";
+  });
+
+  generateBtn.addEventListener("click", async () => {
+    clearTimeout(saveTimer);
+    await autoSave();
+
+    if (!confirm("確定要生成 OG 圖片？現有的 OG 圖片 URL 將被覆蓋。")) return;
+
+    generateBtn.disabled = true;
+    const origText = generateBtn.textContent;
+    generateBtn.textContent = "生成中...";
+
+    try {
+      const heroFile = heroFileInput.files[0];
+      let body = null;
+      if (heroFile) {
+        const fd = new FormData();
+        fd.append("heroImage", heroFile);
+        body = fd;
+      }
+
+      const res = await fetch(`/api/drafts/${draftId}/generate-og`, {
+        method: "POST",
+        body,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "生成失敗");
+
+      ogUrlInput.value = data.ogImageUrl;
+      if (data.draft) draft = data.draft;
+      scheduleSave();
+
+      // Reset hero file selection
+      heroFileInput.value = "";
+      if (heroFilename) heroFilename.textContent = "未選取";
+    } catch (e) {
+      alert(`生成失敗：${e.message}`);
+    } finally {
+      generateBtn.disabled = false;
+      generateBtn.textContent = origText;
+    }
   });
 }
 

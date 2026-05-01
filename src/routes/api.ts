@@ -16,6 +16,7 @@
  * - `GET /github/posts` — 列出 GitHub 上的 .md 檔案
  * - `POST /sync` — 將 GitHub 文章匯入本地 DB
  * - `POST /upload` — 上傳圖片到 R2
+ * - `POST /drafts/:id/generate-og` — 動態生成 OG 圖片並上傳到 R2，更新 fields.ogImage
  * - `GET /translation-status` — 檢查 AI 翻譯是否啟用
  * - `GET/POST /presets` — 常用翻譯設定列表 / 新增
  * - `GET/PATCH/DELETE /presets/:id` — 單筆常用翻譯 CRUD
@@ -31,6 +32,7 @@ import { openPR, openBatchPR, listGithubPosts, getGithubFile } from "../lib/gith
 import { parseFrontmatter, frontmatterToDraft, extractFromPath } from "../lib/frontmatter";
 import { translateDraft, isTranslationEnabled } from "../lib/translator";
 import { uploadToR2, isR2Enabled } from "../lib/r2";
+import { generateArticleOg } from "../lib/ogImage";
 
 type TranslationPreset = {
   id: string;
@@ -473,6 +475,61 @@ api.post("/upload", async (c) => {
   try {
     const url = await uploadToR2(key, buffer, file.type || "application/octet-stream");
     return c.json({ url });
+  } catch (err) {
+    return c.json({ error: String(err) }, 500);
+  }
+});
+
+// POST /api/drafts/:id/generate-og — generate OG image from draft data and upload to R2
+api.post("/drafts/:id/generate-og", async (c) => {
+  if (!isR2Enabled()) return c.json({ error: "R2 not configured" }, 503);
+
+  const id = c.req.param("id");
+  const draft = db.query("SELECT * FROM drafts WHERE id = ?").get(id) as Draft | null;
+  if (!draft) return c.json({ error: "Not found" }, 404);
+
+  const fields = JSON.parse(draft.fields || "{}");
+  const tags = JSON.parse(draft.tags || "[]");
+  const date = typeof fields.pubDate === "string" && fields.pubDate
+    ? fields.pubDate
+    : new Date().toISOString().slice(0, 10);
+
+  // Hero image for the top strip: prefer file upload in this request, fallback to fields.heroImage
+  let heroImageUrl: string | undefined = typeof fields.heroImage === "string" ? fields.heroImage : undefined;
+
+  const contentType = c.req.header("content-type") ?? "";
+  if (contentType.includes("multipart/form-data")) {
+    const formData = await c.req.formData().catch(() => null);
+    if (formData) {
+      const heroFile = formData.get("heroImage");
+      if (heroFile instanceof File) {
+        const ext = heroFile.name.split(".").pop()?.toLowerCase() ?? "jpg";
+        const heroKey = `og-hero/${nanoid()}.${ext}`;
+        const heroBuffer = new Uint8Array(await heroFile.arrayBuffer());
+        heroImageUrl = await uploadToR2(heroKey, heroBuffer, heroFile.type || "image/jpeg");
+      }
+    }
+  }
+
+  try {
+    const pngBytes = await generateArticleOg({
+      title: draft.title,
+      description: draft.description || undefined,
+      date,
+      tags,
+      heroImageUrl,
+    });
+
+    const ogKey = `og/${id}.png`;
+    const ogUrl = await uploadToR2(ogKey, pngBytes, "image/png");
+
+    const updatedFields = { ...fields, ogImage: ogUrl };
+    const now = new Date().toISOString();
+    db.query("UPDATE drafts SET fields = ?, updated_at = ? WHERE id = ?")
+      .run(JSON.stringify(updatedFields), now, id);
+
+    const updatedDraft = db.query("SELECT * FROM drafts WHERE id = ?").get(id) as Draft;
+    return c.json({ success: true, ogImageUrl: ogUrl, draft: updatedDraft });
   } catch (err) {
     return c.json({ error: String(err) }, 500);
   }

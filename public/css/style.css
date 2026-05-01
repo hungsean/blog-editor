@@ -310,6 +310,12 @@ h1 { font-size: 1.5rem; font-weight: 700; }
 .field-group { display: flex; flex-direction: column; gap: 6px; }
 .field-group.full-width { grid-column: 1 / -1; }
 
+.slug-valid { border-color: var(--success) !important; }
+.slug-invalid { border-color: var(--danger) !important; }
+.slug-check-msg { font-size: 0.75rem; min-height: 1rem; color: var(--text-muted); }
+.slug-check-msg--valid { color: var(--success); }
+.slug-check-msg--invalid { color: var(--danger); }
+
 label { font-size: 0.8rem; color: var(--text-muted); font-weight: 500; }
 
 input[type="text"],

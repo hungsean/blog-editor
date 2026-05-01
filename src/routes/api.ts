@@ -11,6 +11,7 @@
  * - `POST /drafts/:id/ai-translate` — 使用 OpenAI 翻譯後建立副本
  * - `POST /drafts/:id/resync` — 從 GitHub 覆蓋本地草稿
  * - `GET /drafts/:id/translations` — 取得相同 slug 的其他語言版本
+ * - `GET /drafts/:id/slug-check` — 即時檢查 slug 可用性（同語言唯一性）
  * - `POST /batch-publish` — 多篇同時送出一個 PR
  * - `POST /batch-delete` — 批量刪除草稿
  * - `GET /github/posts` — 列出 GitHub 上的 .md 檔案
@@ -24,7 +25,8 @@
  *
  * ### 已知限制
  * - `publish` 與 `batch-publish` 的 frontmatter 序列化為自製格式，僅支援 string/boolean/array
- * - `slug` 若為空，會以 `slugify(title)` 產生，CJK 字元會被移除
+ * - `slug` 若為空，publish 時會嘗試以 `slugify(title)` 產生；若仍為空則阻擋送出
+ * - slug 唯一性規則為同語言內唯一（`lang + slug` 不重複），不同語言可用相同 slug
  */
 import { Hono } from "hono";
 import { nanoid } from "nanoid";
@@ -106,7 +108,7 @@ api.post("/drafts", async (c) => {
     id,
     body.title ?? "",
     body.lang ?? "zh-tw",
-    body.slug ?? "",
+    body.slug?.trim() ?? "",
     body.description ?? "",
     body.tags ?? "[]",
     body.fields ?? "{}",
@@ -149,7 +151,7 @@ api.patch("/drafts/:id", async (c) => {
   ).run(
     body.title       ?? existing.title,
     body.lang        ?? existing.lang,
-    body.slug        ?? existing.slug,
+    body.slug !== undefined ? body.slug.trim() : existing.slug,
     body.description ?? existing.description,
     body.tags        ?? existing.tags,
     body.fields      ?? existing.fields,
@@ -182,7 +184,20 @@ api.post("/drafts/:id/publish", async (c) => {
   const date = typeof fields.pubDate === "string" && fields.pubDate
     ? fields.pubDate
     : new Date().toISOString().slice(0, 10);
-  const slug = draft.slug || slugify(draft.title) || id;
+
+  // Resolve slug — no fallback to id; empty slug is a hard error
+  const slug = draft.slug?.trim() || slugify(draft.title);
+  if (!slug) {
+    return c.json({ success: false, reason: "required", error: "Slug is required" }, 400);
+  }
+
+  // Check same-lang slug conflict
+  const slugConflict = db.query(
+    "SELECT id, title, lang, slug, status, github_path FROM drafts WHERE lang = ? AND TRIM(slug) = ? AND id != ? LIMIT 1"
+  ).get(draft.lang, slug, id) as { id: string; title: string; lang: string; slug: string; status: string; github_path: string } | null;
+  if (slugConflict) {
+    return c.json({ success: false, reason: "conflict", error: "Slug already exists in this language", conflict: slugConflict }, 400);
+  }
 
   // Build frontmatter — lang is encoded in directory path, not in frontmatter
   const { lang: _lang, ...fieldsWithoutLang } = fields;
@@ -256,13 +271,62 @@ api.post("/batch-publish", async (c) => {
 
   if (drafts.length === 0) return c.json({ error: "No valid drafts found" }, 404);
 
-  const files = drafts.map((draft) => {
+  // ── Slug validation ─────────────────────────────────────────────────────────
+  // Resolve final slug for each draft (no fallback to id)
+  const resolved = drafts.map((d) => ({ draft: d, slug: d.slug?.trim() || slugify(d.title) }));
+
+  // Block if any draft has empty slug
+  const emptySlugDrafts = resolved.filter((r) => !r.slug);
+  if (emptySlugDrafts.length > 0) {
+    return c.json({
+      success: false,
+      reason: "slug_required",
+      error: "Some drafts are missing a slug",
+      drafts: emptySlugDrafts.map((r) => ({ id: r.draft.id, title: r.draft.title })),
+    }, 400);
+  }
+
+  // Check internal duplicates within this batch (same lang + slug)
+  const batchKeys = new Map<string, Array<{ id: string; title: string }>>();
+  for (const { draft, slug } of resolved) {
+    const key = `${draft.lang}:${slug}`;
+    if (!batchKeys.has(key)) batchKeys.set(key, []);
+    batchKeys.get(key)!.push({ id: draft.id, title: draft.title });
+  }
+  const internalConflicts = [...batchKeys.entries()]
+    .filter(([, ds]) => ds.length > 1)
+    .map(([key, ds]) => {
+      const colonIdx = key.indexOf(":");
+      return { type: "duplicate_in_batch", lang: key.slice(0, colonIdx), slug: key.slice(colonIdx + 1), drafts: ds };
+    });
+
+  // Check each draft against existing DB records (excluding all batch members)
+  const batchIds = drafts.map((d) => d.id);
+  const placeholders = batchIds.map(() => "?").join(",");
+  const dbConflicts: object[] = [];
+  for (const { draft, slug } of resolved) {
+    // Skip if already flagged as internal conflict
+    if (batchKeys.get(`${draft.lang}:${slug}`)!.length > 1) continue;
+    const conflict = db.query(
+      `SELECT id, title, lang, slug, status, github_path FROM drafts WHERE lang = ? AND TRIM(slug) = ? AND id NOT IN (${placeholders}) LIMIT 1`
+    ).get(draft.lang, slug, ...batchIds) as { id: string; title: string; lang: string; slug: string; status: string; github_path: string } | null;
+    if (conflict) {
+      dbConflicts.push({ type: "existing_draft", lang: draft.lang, slug, draft: { id: draft.id, title: draft.title }, conflict });
+    }
+  }
+
+  const allConflicts = [...internalConflicts, ...dbConflicts];
+  if (allConflicts.length > 0) {
+    return c.json({ success: false, reason: "slug_conflicts", error: "Slug conflicts found", conflicts: allConflicts }, 400);
+  }
+  // ── End slug validation ──────────────────────────────────────────────────────
+
+  const files = resolved.map(({ draft, slug }) => {
     const fields = JSON.parse(draft.fields || "{}");
     const tags = JSON.parse(draft.tags || "[]");
     const date = typeof fields.pubDate === "string" && fields.pubDate
       ? fields.pubDate
       : new Date().toISOString().slice(0, 10);
-    const slug = draft.slug || slugify(draft.title) || draft.id;
 
     const { lang: _lang, ...fieldsWithoutLang } = fields;
     const fm: Record<string, unknown> = { title: draft.title, pubDate: date };
@@ -392,14 +456,39 @@ api.get("/drafts/:id/translations", (c) => {
   const draft = db.query("SELECT slug FROM drafts WHERE id = ?").get(id) as { slug: string } | null;
   if (!draft) return c.json({ error: "Not found" }, 404);
 
-  const slug = draft.slug;
+  const slug = draft.slug.trim();
   if (!slug) return c.json([]);
 
   const siblings = db.query(
-    "SELECT id, lang, title, status FROM drafts WHERE slug = ? AND id != ? ORDER BY lang"
+    "SELECT id, lang, title, status FROM drafts WHERE TRIM(slug) = ? AND id != ? ORDER BY lang"
   ).all(slug, id) as { id: string; lang: string; title: string; status: string }[];
 
   return c.json(siblings);
+});
+
+// GET /api/drafts/:id/slug-check — real-time availability check (same-lang uniqueness)
+api.get("/drafts/:id/slug-check", (c) => {
+  const id = c.req.param("id");
+  const existing = db.query("SELECT id FROM drafts WHERE id = ?").get(id);
+  if (!existing) return c.json({ error: "Not found" }, 404);
+
+  const lang = c.req.query("lang");
+  if (!lang) return c.json({ error: "lang is required" }, 400);
+
+  const slug = (c.req.query("slug") ?? "").trim();
+  if (!slug) {
+    return c.json({ ok: false, reason: "required", message: "Slug is required", conflict: null });
+  }
+
+  const conflict = db.query(
+    "SELECT id, title, lang, slug, status, github_path FROM drafts WHERE lang = ? AND TRIM(slug) = ? AND id != ? LIMIT 1"
+  ).get(lang, slug, id) as { id: string; title: string; lang: string; slug: string; status: string; github_path: string } | null;
+
+  if (conflict) {
+    return c.json({ ok: false, reason: "conflict", message: "Slug already exists in this language", conflict });
+  }
+
+  return c.json({ ok: true, reason: "available", message: "Slug is available", conflict: null });
 });
 
 // GET /api/translation-status — check if AI translation is available
@@ -417,7 +506,15 @@ api.post("/drafts/:id/ai-translate", async (c) => {
   const targetLang = body.targetLang;
   if (!targetLang) return c.json({ error: "targetLang is required" }, 400);
 
-  const slug = source.slug || slugify(source.title) || source.id;
+  const slug = (source.slug?.trim()) || slugify(source.title);
+  if (!slug) return c.json({ error: "Source draft has no slug; set one before translating" }, 400);
+
+  const translationConflict = db.query(
+    "SELECT id FROM drafts WHERE lang = ? AND TRIM(slug) = ? LIMIT 1"
+  ).get(targetLang, slug) as { id: string } | null;
+  if (translationConflict) {
+    return c.json({ error: "A draft with this slug already exists for the target language", conflict: translationConflict }, 409);
+  }
 
   try {
     const allPresets = db.query("SELECT * FROM translation_presets").all() as TranslationPreset[];
@@ -464,7 +561,16 @@ api.post("/drafts/:id/translate", async (c) => {
   const targetLang = body.targetLang;
   if (!targetLang) return c.json({ error: "targetLang is required" }, 400);
 
-  const slug = source.slug || slugify(source.title) || source.id;
+  const slug = (source.slug?.trim()) || slugify(source.title);
+  if (!slug) return c.json({ error: "Source draft has no slug; set one before translating" }, 400);
+
+  const translationConflict = db.query(
+    "SELECT id FROM drafts WHERE lang = ? AND TRIM(slug) = ? LIMIT 1"
+  ).get(targetLang, slug) as { id: string } | null;
+  if (translationConflict) {
+    return c.json({ error: "A draft with this slug already exists for the target language", conflict: translationConflict }, 409);
+  }
+
   const now = new Date().toISOString();
   const newId = nanoid();
 

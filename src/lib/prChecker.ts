@@ -28,6 +28,7 @@ type LocalDraft = {
   title: string;
   lang: string;
   slug: string;
+  github_path: string;
 };
 
 function extractPrNumber(prUrl: string): number | null {
@@ -113,7 +114,7 @@ async function checkDraftsExistOnGithub() {
   devLog(`[prChecker] 開始同步 draft 文章...`);
   const drafts = db
     .query(
-      "SELECT id, title, lang, slug FROM drafts WHERE status = 'draft' AND slug != '' AND lang != ''"
+      "SELECT id, title, lang, slug, github_path FROM drafts WHERE status = 'draft' AND TRIM(slug) != '' AND lang != ''"
     )
     .all() as LocalDraft[];
 
@@ -124,10 +125,22 @@ async function checkDraftsExistOnGithub() {
   devLog(`[prChecker] 找到 ${drafts.length} 篇待同步 draft 文章`);
 
   for (const draft of drafts) {
-    const path = `src/content/blog/${draft.lang}/${draft.slug}.md`;
+    const slug = draft.slug.trim();
+    const path = `src/content/blog/${draft.lang}/${slug}.md`;
     devLog(`[prChecker] 檢查遠端是否存在 "${draft.title}" (${path})...`);
     try {
       const sha = await getFileSha(path);
+      const slugConflict = db.query(
+        "SELECT id, title FROM drafts WHERE lang = ? AND TRIM(slug) = ? AND id != ? LIMIT 1"
+      ).get(draft.lang, slug, draft.id) as { id: string; title: string } | null;
+
+      if (slugConflict && draft.github_path !== path) {
+        console.warn(
+          `[prChecker] "${draft.title}" 與 "${slugConflict.title}" slug 重複，略過自動標記 published (${path})`
+        );
+        continue;
+      }
+
       const now = new Date().toISOString();
       db.query(
         `UPDATE drafts

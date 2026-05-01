@@ -198,6 +198,7 @@ function renderFields() {
   initDatePickers();
   initImageUploadForFields();
   initOgGenerate();
+  initOgPreview();
 }
 
 function renderSlugField(slug, title) {
@@ -391,6 +392,7 @@ function renderField(f, value) {
           <label>${escHtml(label)}</label>
           <div style="display:flex;gap:0.5rem">
             <input type="url" data-key-extra="${f.key}" value="${escAttr(urlVal)}" placeholder="${escAttr(placeholder)}" inputmode="url" style="flex:1">
+            ${isOgImage ? `<button type="button" class="btn btn-secondary btn-preview-og" title="預覽 OG 圖片" style="white-space:nowrap;font-size:0.8rem;padding:0 0.7rem">👁</button>` : ""}
             <button type="button" class="btn btn-secondary btn-upload-field-image" data-upload-target="${f.key}" style="white-space:nowrap;font-size:0.8rem;padding:0 0.7rem">↑ 上傳</button>
             ${isOgImage ? `<button type="button" class="btn btn-primary btn-generate-og" style="white-space:nowrap;font-size:0.8rem;padding:0 0.7rem">✦ 生成 OG</button>` : ""}
           </div>
@@ -519,6 +521,25 @@ function initOgGenerate() {
       generateBtn.disabled = false;
       generateBtn.textContent = origText;
     }
+  });
+}
+
+function initOgPreview() {
+  const previewBtn = fieldsForm.querySelector(".btn-preview-og");
+  const ogUrlInput = fieldsForm.querySelector('[data-key-extra="ogImage"]');
+  if (!previewBtn || !ogUrlInput) return;
+
+  previewBtn.addEventListener("click", () => {
+    const url = ogUrlInput.value.trim();
+    if (!url) { alert("尚未設定 OG 圖片 URL"); return; }
+    const noCache = url + (url.includes("?") ? "&" : "?") + "_t=" + Date.now();
+    const win = window.open("", "_blank", "width=1200,height=700,toolbar=0,menubar=0,scrollbars=1");
+    win.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>OG 圖片預覽</title>
+<style>body{margin:0;background:#111;display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;font-family:sans-serif;color:#ccc}
+img{max-width:100%;border:1px solid #333;display:block}
+p{margin:12px 0 4px;font-size:0.8rem;opacity:0.6;word-break:break-all;max-width:1200px;text-align:center}</style>
+</head><body><img src="${escAttr(noCache)}" alt="OG Image"><p>${escHtml(url)}</p></body></html>`);
+    win.document.close();
   });
 }
 

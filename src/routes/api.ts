@@ -108,7 +108,7 @@ api.post("/drafts", async (c) => {
     id,
     body.title ?? "",
     body.lang ?? "zh-tw",
-    body.slug ?? "",
+    body.slug?.trim() ?? "",
     body.description ?? "",
     body.tags ?? "[]",
     body.fields ?? "{}",
@@ -456,11 +456,11 @@ api.get("/drafts/:id/translations", (c) => {
   const draft = db.query("SELECT slug FROM drafts WHERE id = ?").get(id) as { slug: string } | null;
   if (!draft) return c.json({ error: "Not found" }, 404);
 
-  const slug = draft.slug;
+  const slug = draft.slug.trim();
   if (!slug) return c.json([]);
 
   const siblings = db.query(
-    "SELECT id, lang, title, status FROM drafts WHERE slug = ? AND id != ? ORDER BY lang"
+    "SELECT id, lang, title, status FROM drafts WHERE TRIM(slug) = ? AND id != ? ORDER BY lang"
   ).all(slug, id) as { id: string; lang: string; title: string; status: string }[];
 
   return c.json(siblings);

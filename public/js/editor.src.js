@@ -913,7 +913,7 @@ function getFormData() {
   const get = (sel) => document.querySelector(sel);
   const title = get('[data-key="title"]')?.value ?? "";
   const lang = get('[data-key="lang"]')?.value ?? "zh-tw";
-  const slug = (get('[data-key="slug"]')?.value ?? "").trim() || slugifyClient(title);
+  const slug = (get('[data-key="slug"]')?.value ?? "").trim();
   const description = get('[data-key="description"]')?.value ?? "";
   const tags = JSON.stringify(getTags());
   const content = mdContent;

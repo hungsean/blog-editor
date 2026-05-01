@@ -103,6 +103,7 @@ async function loadTranslations() {
 }
 
 function scheduleSlugCheck() {
+  ++slugCheckRequestId; // invalidate any in-flight request before resetting UI
   slugCheckState = "idle";
   updateSlugCheckUI();
   clearTimeout(slugCheckDebounceTimer);

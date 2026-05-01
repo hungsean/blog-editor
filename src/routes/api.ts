@@ -193,7 +193,7 @@ api.post("/drafts/:id/publish", async (c) => {
 
   // Check same-lang slug conflict
   const slugConflict = db.query(
-    "SELECT id, title, lang, slug, status, github_path FROM drafts WHERE lang = ? AND slug = ? AND id != ? LIMIT 1"
+    "SELECT id, title, lang, slug, status, github_path FROM drafts WHERE lang = ? AND TRIM(slug) = ? AND id != ? LIMIT 1"
   ).get(draft.lang, slug, id) as { id: string; title: string; lang: string; slug: string; status: string; github_path: string } | null;
   if (slugConflict) {
     return c.json({ success: false, reason: "conflict", error: "Slug already exists in this language", conflict: slugConflict }, 400);
@@ -481,7 +481,7 @@ api.get("/drafts/:id/slug-check", (c) => {
   }
 
   const conflict = db.query(
-    "SELECT id, title, lang, slug, status, github_path FROM drafts WHERE lang = ? AND slug = ? AND id != ? LIMIT 1"
+    "SELECT id, title, lang, slug, status, github_path FROM drafts WHERE lang = ? AND TRIM(slug) = ? AND id != ? LIMIT 1"
   ).get(lang, slug, id) as { id: string; title: string; lang: string; slug: string; status: string; github_path: string } | null;
 
   if (conflict) {
@@ -506,7 +506,8 @@ api.post("/drafts/:id/ai-translate", async (c) => {
   const targetLang = body.targetLang;
   if (!targetLang) return c.json({ error: "targetLang is required" }, 400);
 
-  const slug = source.slug || slugify(source.title) || source.id;
+  const slug = (source.slug?.trim()) || slugify(source.title);
+  if (!slug) return c.json({ error: "Source draft has no slug; set one before translating" }, 400);
 
   try {
     const allPresets = db.query("SELECT * FROM translation_presets").all() as TranslationPreset[];
@@ -553,7 +554,8 @@ api.post("/drafts/:id/translate", async (c) => {
   const targetLang = body.targetLang;
   if (!targetLang) return c.json({ error: "targetLang is required" }, 400);
 
-  const slug = source.slug || slugify(source.title) || source.id;
+  const slug = (source.slug?.trim()) || slugify(source.title);
+  if (!slug) return c.json({ error: "Source draft has no slug; set one before translating" }, 400);
   const now = new Date().toISOString();
   const newId = nanoid();
 

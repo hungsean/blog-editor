@@ -44,6 +44,13 @@ let mdContent = "";
 let saveTimer = null;
 let saving = false;
 
+// Slug check state
+let slugCheckState = "idle"; // "idle" | "checking" | "valid" | "invalid"
+let slugCheckReason = null;  // null | "required" | "conflict" | "error"
+let slugCheckConflict = null;
+let slugCheckRequestId = 0;
+let slugCheckDebounceTimer = null;
+
 const saveStatus = document.getElementById("save-status");
 const btnPublish = document.getElementById("btn-publish");
 const fieldsForm = document.getElementById("fields-form");
@@ -95,6 +102,87 @@ async function loadTranslations() {
   } catch { /* ignore */ }
 }
 
+function scheduleSlugCheck() {
+  slugCheckState = "idle";
+  updateSlugCheckUI();
+  clearTimeout(slugCheckDebounceTimer);
+  slugCheckDebounceTimer = setTimeout(executeSlugCheck, 400);
+}
+
+async function executeSlugCheck() {
+  if (!draftId) return;
+  const slugEl = document.querySelector('[data-key="slug"]');
+  const langEl = document.querySelector('[data-key="lang"]');
+  if (!slugEl || !langEl) return;
+
+  const slug = slugEl.value.trim();
+  const lang = langEl.value;
+  const requestId = ++slugCheckRequestId;
+
+  slugCheckState = "checking";
+  slugCheckReason = null;
+  slugCheckConflict = null;
+  updateSlugCheckUI();
+
+  try {
+    const res = await fetch(
+      `/api/drafts/${draftId}/slug-check?lang=${encodeURIComponent(lang)}&slug=${encodeURIComponent(slug)}`
+    );
+    if (requestId !== slugCheckRequestId) return; // stale response, discard
+
+    if (!res.ok) {
+      slugCheckState = "invalid";
+      slugCheckReason = "error";
+    } else {
+      const data = await res.json();
+      if (data.ok) {
+        slugCheckState = "valid";
+        slugCheckReason = "available";
+        slugCheckConflict = null;
+      } else {
+        slugCheckState = "invalid";
+        slugCheckReason = data.reason;
+        slugCheckConflict = data.conflict ?? null;
+      }
+    }
+  } catch {
+    if (requestId !== slugCheckRequestId) return;
+    slugCheckState = "invalid";
+    slugCheckReason = "error";
+    slugCheckConflict = null;
+  }
+
+  updateSlugCheckUI();
+}
+
+function updateSlugCheckUI() {
+  const slugInput = document.getElementById("slug-input");
+  const msgEl = document.getElementById("slug-check-msg");
+  if (!slugInput || !msgEl) return;
+
+  slugInput.classList.remove("slug-valid", "slug-invalid");
+  msgEl.textContent = "";
+  msgEl.className = "slug-check-msg";
+
+  if (slugCheckState === "checking") {
+    msgEl.textContent = "檢查 slug...";
+  } else if (slugCheckState === "valid") {
+    slugInput.classList.add("slug-valid");
+    msgEl.textContent = "此 slug 可使用";
+    msgEl.classList.add("slug-check-msg--valid");
+  } else if (slugCheckState === "invalid") {
+    slugInput.classList.add("slug-invalid");
+    msgEl.classList.add("slug-check-msg--invalid");
+    if (slugCheckReason === "required") {
+      msgEl.textContent = "Slug 為必填";
+    } else if (slugCheckReason === "conflict" && slugCheckConflict) {
+      msgEl.textContent = `此語言已有相同 slug：${slugCheckConflict.title}`;
+    } else {
+      msgEl.textContent = "無法檢查 slug";
+    }
+  }
+}
+
 function renderFields() {
   const extraFields = JSON.parse(draft.fields || "{}");
   const rows = EXTRA_FIELDS.map((f) => renderField(f, extraFields[f.key]));
@@ -119,18 +207,35 @@ function renderFields() {
   // Title → slug auto-sync
   const titleEl = fieldsForm.querySelector('[data-key="title"]');
   const slugEl = fieldsForm.querySelector('[data-key="slug"]');
+  const langEl = fieldsForm.querySelector('[data-key="lang"]');
   let prevDerived = slugifyClient(draft.title || "");
   titleEl?.addEventListener("input", () => {
     const newDerived = slugifyClient(titleEl.value);
-    if (slugEl && slugEl.value === prevDerived) slugEl.value = newDerived;
+    if (slugEl && slugEl.value === prevDerived) {
+      slugEl.value = newDerived;
+      scheduleSlugCheck();
+    }
     prevDerived = newDerived;
     scheduleSave();
   });
-  slugEl?.addEventListener("input", scheduleSave);
+  slugEl?.addEventListener("input", () => {
+    scheduleSlugCheck();
+    scheduleSave();
+  });
+
+  // Lang change triggers re-check since uniqueness is per-lang
+  langEl?.addEventListener("change", () => scheduleSlugCheck());
 
   document.getElementById("btn-reset-slug")?.addEventListener("click", () => {
-    if (slugEl && titleEl) { slugEl.value = slugifyClient(titleEl.value); scheduleSave(); }
+    if (slugEl && titleEl) {
+      slugEl.value = slugifyClient(titleEl.value);
+      scheduleSlugCheck();
+      scheduleSave();
+    }
   });
+
+  // Initial slug check after fields are rendered
+  scheduleSlugCheck();
 
   // AI translation buttons
   fieldsForm.querySelectorAll(".btn-ai-translate").forEach((btn) => {
@@ -207,9 +312,10 @@ function renderSlugField(slug, title) {
     <div class="field-group">
       <label>Slug <small style="color:#666">(URL 識別碼，翻譯版本共用)</small></label>
       <div style="display:flex;gap:0.5rem">
-        <input type="text" data-key="slug" value="${escAttr(val)}" placeholder="自動從標題產生" style="flex:1">
+        <input type="text" id="slug-input" data-key="slug" value="${escAttr(val)}" placeholder="自動從標題產生" style="flex:1">
         <button type="button" id="btn-reset-slug" class="btn btn-secondary" style="white-space:nowrap;font-size:0.8rem;padding:0 0.6rem">重設</button>
       </div>
+      <span id="slug-check-msg" class="slug-check-msg"></span>
     </div>`;
 }
 
@@ -806,7 +912,7 @@ function getFormData() {
   const get = (sel) => document.querySelector(sel);
   const title = get('[data-key="title"]')?.value ?? "";
   const lang = get('[data-key="lang"]')?.value ?? "zh-tw";
-  const slug = get('[data-key="slug"]')?.value || slugifyClient(title);
+  const slug = (get('[data-key="slug"]')?.value ?? "").trim() || slugifyClient(title);
   const description = get('[data-key="description"]')?.value ?? "";
   const tags = JSON.stringify(getTags());
   const content = mdContent;
@@ -862,9 +968,27 @@ async function publish() {
   const body = getFormData();
   if (!body.title.trim()) { alert("請輸入標題"); return; }
 
+  // 1. Autosave first
   clearTimeout(saveTimer);
+  clearTimeout(slugCheckDebounceTimer);
   await autoSave();
 
+  // 2. Ensure slug check is complete and valid
+  if (slugCheckState !== "valid") {
+    await executeSlugCheck();
+  }
+  if (slugCheckState !== "valid") {
+    if (slugCheckReason === "required") {
+      alert("Slug 為必填，請先輸入 slug。");
+    } else if (slugCheckReason === "conflict" && slugCheckConflict) {
+      alert(`此語言已有相同 slug：「${slugCheckConflict.title}」，請更換 slug。`);
+    } else {
+      alert("Slug 檢查失敗，請確認 slug 後再試。");
+    }
+    return;
+  }
+
+  // 3. Confirm
   if (!confirm(`確定要對「${body.title}」開 Pull Request？`)) return;
 
   btnPublish.disabled = true;
@@ -879,7 +1003,19 @@ async function publish() {
       updatePublishButton();
       window.open(data.pr_url, "_blank");
     } else {
-      alert(`送出失敗：${data.error}`);
+      // Handle backend slug errors (race condition guard)
+      if (data.reason === "required") {
+        alert("Slug 為必填，請先輸入 slug。");
+        executeSlugCheck();
+      } else if (data.reason === "conflict" && data.conflict) {
+        alert(`此語言已有相同 slug：「${data.conflict.title}」，請更換 slug。`);
+        slugCheckState = "invalid";
+        slugCheckReason = "conflict";
+        slugCheckConflict = data.conflict;
+        updateSlugCheckUI();
+      } else {
+        alert(`送出失敗：${data.error}`);
+      }
       btnPublish.disabled = false;
       btnPublish.textContent = "送出 PR";
     }

@@ -308,7 +308,7 @@ api.post("/batch-publish", async (c) => {
     // Skip if already flagged as internal conflict
     if (batchKeys.get(`${draft.lang}:${slug}`)!.length > 1) continue;
     const conflict = db.query(
-      `SELECT id, title, lang, slug, status, github_path FROM drafts WHERE lang = ? AND slug = ? AND id NOT IN (${placeholders}) LIMIT 1`
+      `SELECT id, title, lang, slug, status, github_path FROM drafts WHERE lang = ? AND TRIM(slug) = ? AND id NOT IN (${placeholders}) LIMIT 1`
     ).get(draft.lang, slug, ...batchIds) as { id: string; title: string; lang: string; slug: string; status: string; github_path: string } | null;
     if (conflict) {
       dbConflicts.push({ type: "existing_draft", lang: draft.lang, slug, draft: { id: draft.id, title: draft.title }, conflict });
@@ -509,6 +509,13 @@ api.post("/drafts/:id/ai-translate", async (c) => {
   const slug = (source.slug?.trim()) || slugify(source.title);
   if (!slug) return c.json({ error: "Source draft has no slug; set one before translating" }, 400);
 
+  const translationConflict = db.query(
+    "SELECT id FROM drafts WHERE lang = ? AND TRIM(slug) = ? LIMIT 1"
+  ).get(targetLang, slug) as { id: string } | null;
+  if (translationConflict) {
+    return c.json({ error: "A draft with this slug already exists for the target language", conflict: translationConflict }, 409);
+  }
+
   try {
     const allPresets = db.query("SELECT * FROM translation_presets").all() as TranslationPreset[];
     const textToSearch = [source.title, source.description, source.content].join(" ").toLowerCase();
@@ -556,6 +563,14 @@ api.post("/drafts/:id/translate", async (c) => {
 
   const slug = (source.slug?.trim()) || slugify(source.title);
   if (!slug) return c.json({ error: "Source draft has no slug; set one before translating" }, 400);
+
+  const translationConflict = db.query(
+    "SELECT id FROM drafts WHERE lang = ? AND TRIM(slug) = ? LIMIT 1"
+  ).get(targetLang, slug) as { id: string } | null;
+  if (translationConflict) {
+    return c.json({ error: "A draft with this slug already exists for the target language", conflict: translationConflict }, 409);
+  }
+
   const now = new Date().toISOString();
   const newId = nanoid();
 

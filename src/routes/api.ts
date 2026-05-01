@@ -544,18 +544,26 @@ api.post("/drafts/:id/generate-og", async (c) => {
   const body = await c.req.json().catch(() => ({})) as { heroToken?: string };
   let heroImageUrl: string | undefined;
   let heroTempPath: string | undefined;
+  let heroWarning: string | undefined;
 
   if (body.heroToken) {
     // Sanitize token: must be filename-safe, no path traversal
     const safeToken = body.heroToken.replace(/[^a-zA-Z0-9._-]/g, "");
-    if (safeToken === body.heroToken) {
-      heroTempPath = `${OG_TEMP_DIR}/${safeToken}`;
-      const tempFile = Bun.file(heroTempPath);
-      if (await tempFile.exists()) {
-        const bytes = new Uint8Array(await tempFile.arrayBuffer());
-        const mime = tempFile.type || "image/jpeg";
-        heroImageUrl = `data:${mime};base64,${Buffer.from(bytes).toString("base64")}`;
-      }
+    if (safeToken !== body.heroToken) {
+      return c.json({ error: "Invalid heroToken" }, 400);
+    }
+    // Token must belong to this draft (prefixed with `${id}-`)
+    if (!safeToken.startsWith(`${id}-`)) {
+      return c.json({ error: "heroToken does not belong to this draft" }, 400);
+    }
+    heroTempPath = `${OG_TEMP_DIR}/${safeToken}`;
+    const tempFile = Bun.file(heroTempPath);
+    if (await tempFile.exists()) {
+      const bytes = new Uint8Array(await tempFile.arrayBuffer());
+      const mime = tempFile.type || "image/jpeg";
+      heroImageUrl = `data:${mime};base64,${Buffer.from(bytes).toString("base64")}`;
+    } else {
+      heroWarning = "heroToken not found or expired; OG generated without hero image";
     }
   }
 
@@ -580,7 +588,7 @@ api.post("/drafts/:id/generate-og", async (c) => {
     if (heroTempPath) await unlink(heroTempPath).catch(() => {});
 
     const updatedDraft = db.query("SELECT * FROM drafts WHERE id = ?").get(id) as Draft;
-    return c.json({ success: true, ogImageUrl: ogUrl, draft: updatedDraft });
+    return c.json({ success: true, ogImageUrl: ogUrl, draft: updatedDraft, ...(heroWarning ? { warning: heroWarning } : {}) });
   } catch (err) {
     return c.json({ error: String(err) }, 500);
   }

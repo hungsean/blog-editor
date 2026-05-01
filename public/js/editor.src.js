@@ -465,9 +465,27 @@ function initOgGenerate() {
   const ogUrlInput = fieldsForm.querySelector('[data-key-extra="ogImage"]');
   if (!generateBtn || !heroFileInput || !ogUrlInput) return;
 
-  heroFileInput.addEventListener("change", () => {
+  let currentHeroToken = null;
+
+  heroFileInput.addEventListener("change", async () => {
     const file = heroFileInput.files[0];
-    heroFilename.textContent = file ? file.name : "未選取";
+    if (!file) return;
+    heroFileInput.value = "";
+
+    heroFilename.textContent = "上傳中...";
+    try {
+      const fd = new FormData();
+      fd.append("heroImage", file);
+      const res = await fetch(`/api/drafts/${draftId}/og-hero`, { method: "POST", body: fd });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "上傳失敗");
+      currentHeroToken = data.heroToken;
+      heroFilename.textContent = file.name;
+    } catch (e) {
+      currentHeroToken = null;
+      heroFilename.textContent = "上傳失敗";
+      alert(`封面圖上傳失敗：${e.message}`);
+    }
   });
 
   generateBtn.addEventListener("click", async () => {
@@ -481,17 +499,10 @@ function initOgGenerate() {
     generateBtn.textContent = "生成中...";
 
     try {
-      const heroFile = heroFileInput.files[0];
-      let body = null;
-      if (heroFile) {
-        const fd = new FormData();
-        fd.append("heroImage", heroFile);
-        body = fd;
-      }
-
       const res = await fetch(`/api/drafts/${draftId}/generate-og`, {
         method: "POST",
-        body,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(currentHeroToken ? { heroToken: currentHeroToken } : {}),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "生成失敗");
@@ -500,8 +511,7 @@ function initOgGenerate() {
       if (data.draft) draft = data.draft;
       scheduleSave();
 
-      // Reset hero file selection
-      heroFileInput.value = "";
+      currentHeroToken = null;
       if (heroFilename) heroFilename.textContent = "未選取";
     } catch (e) {
       alert(`生成失敗：${e.message}`);

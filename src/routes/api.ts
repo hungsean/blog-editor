@@ -16,7 +16,8 @@
  * - `GET /github/posts` — 列出 GitHub 上的 .md 檔案
  * - `POST /sync` — 將 GitHub 文章匯入本地 DB
  * - `POST /upload` — 上傳圖片到 R2
- * - `POST /drafts/:id/generate-og` — 動態生成 OG 圖片並上傳到 R2，更新 fields.ogImage
+ * - `POST /drafts/:id/og-hero` — 暫存 OG 封面圖到 data/og-temp/，回傳 heroToken（不上傳 R2）
+ * - `POST /drafts/:id/generate-og` — 動態生成 OG 圖片並上傳到 R2，更新 fields.ogImage；heroToken 讀暫存檔轉 data URL
  * - `GET /translation-status` — 檢查 AI 翻譯是否啟用
  * - `GET/POST /presets` — 常用翻譯設定列表 / 新增
  * - `GET/PATCH/DELETE /presets/:id` — 單筆常用翻譯 CRUD
@@ -33,6 +34,28 @@ import { parseFrontmatter, frontmatterToDraft, extractFromPath } from "../lib/fr
 import { translateDraft, isTranslationEnabled } from "../lib/translator";
 import { uploadToR2, isR2Enabled } from "../lib/r2";
 import { generateArticleOg } from "../lib/ogImage";
+import { mkdir, unlink, readdir, stat } from "node:fs/promises";
+
+const OG_TEMP_DIR = "data/og-temp";
+
+async function ensureOgTempDir() {
+  await mkdir(OG_TEMP_DIR, { recursive: true });
+}
+
+/** Delete og-temp files older than 24 hours */
+async function cleanupOldOgTemp() {
+  try {
+    await ensureOgTempDir();
+    const files = await readdir(OG_TEMP_DIR);
+    const cutoff = Date.now() - 24 * 60 * 60 * 1000;
+    await Promise.all(
+      files.map(async (f) => {
+        const s = await stat(`${OG_TEMP_DIR}/${f}`).catch(() => null);
+        if (s && s.mtimeMs < cutoff) await unlink(`${OG_TEMP_DIR}/${f}`).catch(() => {});
+      })
+    );
+  } catch { /* non-fatal */ }
+}
 
 type TranslationPreset = {
   id: string;
@@ -480,6 +503,30 @@ api.post("/upload", async (c) => {
   }
 });
 
+// POST /api/drafts/:id/og-hero — temporarily store hero image on disk, return a token
+api.post("/drafts/:id/og-hero", async (c) => {
+  const id = c.req.param("id");
+  const draft = db.query("SELECT id FROM drafts WHERE id = ?").get(id) as { id: string } | null;
+  if (!draft) return c.json({ error: "Not found" }, 404);
+
+  const formData = await c.req.formData().catch(() => null);
+  if (!formData) return c.json({ error: "Invalid form data" }, 400);
+
+  const heroFile = formData.get("heroImage");
+  if (!(heroFile instanceof File)) return c.json({ error: "heroImage file required" }, 400);
+
+  await ensureOgTempDir();
+  cleanupOldOgTemp(); // fire-and-forget cleanup
+
+  const ext = heroFile.name.split(".").pop()?.toLowerCase() ?? "jpg";
+  const token = `${id}-${nanoid()}.${ext}`;
+  const tempPath = `${OG_TEMP_DIR}/${token}`;
+  const buffer = new Uint8Array(await heroFile.arrayBuffer());
+  await Bun.write(tempPath, buffer);
+
+  return c.json({ heroToken: token });
+});
+
 // POST /api/drafts/:id/generate-og — generate OG image from draft data and upload to R2
 api.post("/drafts/:id/generate-og", async (c) => {
   if (!isR2Enabled()) return c.json({ error: "R2 not configured" }, 503);
@@ -494,19 +541,20 @@ api.post("/drafts/:id/generate-og", async (c) => {
     ? fields.pubDate
     : new Date().toISOString().slice(0, 10);
 
-  // Hero image for the top strip: prefer file upload in this request, fallback to fields.heroImage
-  let heroImageUrl: string | undefined = typeof fields.heroImage === "string" ? fields.heroImage : undefined;
+  const body = await c.req.json().catch(() => ({})) as { heroToken?: string };
+  let heroImageUrl: string | undefined;
+  let heroTempPath: string | undefined;
 
-  const contentType = c.req.header("content-type") ?? "";
-  if (contentType.includes("multipart/form-data")) {
-    const formData = await c.req.formData().catch(() => null);
-    if (formData) {
-      const heroFile = formData.get("heroImage");
-      if (heroFile instanceof File) {
-        const ext = heroFile.name.split(".").pop()?.toLowerCase() ?? "jpg";
-        const heroKey = `og-hero/${nanoid()}.${ext}`;
-        const heroBuffer = new Uint8Array(await heroFile.arrayBuffer());
-        heroImageUrl = await uploadToR2(heroKey, heroBuffer, heroFile.type || "image/jpeg");
+  if (body.heroToken) {
+    // Sanitize token: must be filename-safe, no path traversal
+    const safeToken = body.heroToken.replace(/[^a-zA-Z0-9._-]/g, "");
+    if (safeToken === body.heroToken) {
+      heroTempPath = `${OG_TEMP_DIR}/${safeToken}`;
+      const tempFile = Bun.file(heroTempPath);
+      if (await tempFile.exists()) {
+        const bytes = new Uint8Array(await tempFile.arrayBuffer());
+        const mime = tempFile.type || "image/jpeg";
+        heroImageUrl = `data:${mime};base64,${Buffer.from(bytes).toString("base64")}`;
       }
     }
   }
@@ -527,6 +575,9 @@ api.post("/drafts/:id/generate-og", async (c) => {
     const now = new Date().toISOString();
     db.query("UPDATE drafts SET fields = ?, updated_at = ? WHERE id = ?")
       .run(JSON.stringify(updatedFields), now, id);
+
+    // Clean up temp hero after successful generation
+    if (heroTempPath) await unlink(heroTempPath).catch(() => {});
 
     const updatedDraft = db.query("SELECT * FROM drafts WHERE id = ?").get(id) as Draft;
     return c.json({ success: true, ogImageUrl: ogUrl, draft: updatedDraft });

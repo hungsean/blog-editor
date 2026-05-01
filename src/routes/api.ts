@@ -515,10 +515,20 @@ api.post("/drafts/:id/og-hero", async (c) => {
   const heroFile = formData.get("heroImage");
   if (!(heroFile instanceof File)) return c.json({ error: "heroImage file required" }, 400);
 
+  const ALLOWED_MIME: Record<string, string> = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+  };
+  const ext = ALLOWED_MIME[heroFile.type];
+  if (!ext) return c.json({ error: "Only JPEG, PNG, or WebP images are allowed" }, 415);
+
+  const MAX_BYTES = 30 * 1024 * 1024; // 30 MB
+  if (heroFile.size > MAX_BYTES) return c.json({ error: "Image must be 30 MB or smaller" }, 413);
+
   await ensureOgTempDir();
   cleanupOldOgTemp(); // fire-and-forget cleanup
 
-  const ext = heroFile.name.split(".").pop()?.toLowerCase() ?? "jpg";
   const token = `${id}-${nanoid()}.${ext}`;
   const tempPath = `${OG_TEMP_DIR}/${token}`;
   const buffer = new Uint8Array(await heroFile.arrayBuffer());
@@ -548,7 +558,7 @@ api.post("/drafts/:id/generate-og", async (c) => {
 
   if (body.heroToken) {
     // Sanitize token: must be filename-safe, no path traversal
-    const safeToken = body.heroToken.replace(/[^a-zA-Z0-9._-]/g, "");
+    const safeToken = body.heroToken.replaceAll(/[^a-zA-Z0-9._-]/g, "");
     if (safeToken !== body.heroToken) {
       return c.json({ error: "Invalid heroToken" }, 400);
     }
@@ -682,9 +692,9 @@ api.delete("/presets/:id", (c) => {
 function slugify(text: string): string {
   return text
     .toLowerCase()
-    .replace(/[\u4e00-\u9fff]+/g, "")   // remove CJK
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "")
+    .replaceAll(/[\u4e00-\u9fff]+/g, "")   // remove CJK
+    .replaceAll(/[^a-z0-9]+/g, "-")
+    .replaceAll(/^-+|-+$/g, "")
     .slice(0, 50);
 }
 

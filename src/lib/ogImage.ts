@@ -44,7 +44,7 @@ async function getCachedFont(filename: string, url: string): Promise<ArrayBuffer
   return data;
 }
 
-async function loadCjkSubsets(family: string, weight: number): Promise<{ name: string; data: ArrayBuffer; weight: number; style: "normal" }[]> {
+async function loadCjkSubsets(family: string, weight: FontWeight): Promise<SatoriFont[]> {
   const safeFamily = family.replace(/ /g, "-");
   // Use old UA suffix to distinguish TTF cache from old WOFF2 cache
   const cssFilename = `${safeFamily}-${weight}-ttf.css`;
@@ -75,7 +75,7 @@ async function loadCjkSubsets(family: string, weight: number): Promise<{ name: s
     urls.map(async (url, i) => {
       const fontFilename = `${safeFamily}-${weight}-${i}.ttf`;
       const data = await getCachedFont(fontFilename, url);
-      return { name: family, data, weight: weight as FontWeight, style: "normal" as const };
+      return { name: family, data, weight, style: "normal" as const };
     })
   );
 }

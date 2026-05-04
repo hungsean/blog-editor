@@ -17,7 +17,7 @@
  * - `GET /github/posts` — 列出 GitHub 上的 .md 檔案
  * - `POST /sync` — 將 GitHub 文章匯入本地 DB
  * - `POST /upload` — 上傳圖片到 R2
- * - `POST /drafts/:id/og-hero` — 暫存 OG 封面圖到 data/og-temp/，回傳 heroToken（不上傳 R2）
+ * - `POST /drafts/:id/og-hero` — 暫存 OG 封面圖到 `${DATA_DIR}/og-temp/`，回傳 heroToken（不上傳 R2）
  * - `POST /drafts/:id/generate-og` — 動態生成 OG 圖片並上傳到 R2，更新 fields.ogImage；heroToken 讀暫存檔轉 data URL
  * - `GET /translation-status` — 檢查 AI 翻譯是否啟用
  * - `GET/POST /presets` — 常用翻譯設定列表 / 新增
@@ -38,7 +38,8 @@ import { uploadToR2, isR2Enabled } from "../lib/r2";
 import { generateArticleOg } from "../lib/ogImage";
 import { mkdir, unlink, readdir, stat } from "node:fs/promises";
 
-const OG_TEMP_DIR = "data/og-temp";
+const DATA_DIR = process.env.DATA_DIR ?? "data";
+const OG_TEMP_DIR = `${DATA_DIR}/og-temp`;
 
 async function ensureOgTempDir() {
   await mkdir(OG_TEMP_DIR, { recursive: true });

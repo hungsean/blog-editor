@@ -9,17 +9,16 @@
  * ### 已知限制
  * - 使用 top-level await（`Bun.write`），此模組只能在 Bun 環境中使用
  * - Migration 策略為 ALTER TABLE ADD COLUMN，僅支援新增欄位，不支援刪除或改型別
- * - DB 路徑預設為 `${DATA_DIR}/blog-editor.db`，可透過 `DB_PATH` 環境變數覆蓋
- * - `DATA_DIR` 預設為 `data`，Docker 環境設為 `/data`，讓 SQLite 與其他持久化檔案共用 volume
+ * - DB 路徑預設為 `data/blog-editor.db`，可透過 `DB_PATH` 環境變數覆蓋
  */
 import { Database } from "bun:sqlite";
 import { join } from "path";
 
-const DATA_DIR = process.env.DATA_DIR ?? "data";
-const DB_PATH = process.env.DB_PATH ?? join(DATA_DIR, "blog-editor.db");
+const DB_PATH = process.env.DB_PATH ?? join(import.meta.dir, "../../data/blog-editor.db");
 
 // Ensure data directory exists
-await Bun.write(join(DATA_DIR, ".gitkeep"), "").catch(() => {});
+const dataDir = join(import.meta.dir, "../../data");
+await Bun.write(join(dataDir, ".gitkeep"), "").catch(() => {});
 
 export const db = new Database(DB_PATH, { create: true });
 

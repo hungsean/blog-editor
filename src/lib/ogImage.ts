@@ -4,10 +4,9 @@
  * 動態生成文章 OG 圖片（1200×630 PNG），設計嚴格遵循 OG Images Preview.html。
  *
  * ### 字型策略
- * - Geist Mono（Latin）：來自 jsDelivr CDN，快取到 `${DATA_DIR}/fonts/`
+ * - Geist Mono（Latin）：來自 jsDelivr CDN，快取到 `data/fonts/`
  * - Noto Sans TC（CJK）：來自 Google Fonts CSS2 API，解析後逐個子集下載並快取
- * - 快取使用磁碟（`${DATA_DIR}/fonts/`），伺服器重啟後不需重下
- * - Docker 設定 `DATA_DIR=/data`，避免容器重建後重新下載字型
+ * - 快取使用磁碟（data/fonts/），伺服器重啟後不需重下
  *
  * ### 已知限制
  * - heroImageUrl 必須是公開可存取的 URL（satori 渲染時會 fetch）
@@ -28,8 +27,7 @@ const C = {
   accent: "#33CCBB",
 };
 
-const DATA_DIR = process.env.DATA_DIR ?? "data";
-const FONT_DIR = `${DATA_DIR}/fonts`;
+const FONT_DIR = "data/fonts";
 
 async function ensureFontDir() {
   await mkdir(FONT_DIR, { recursive: true });

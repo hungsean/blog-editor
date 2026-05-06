@@ -137,7 +137,7 @@ src/
     ├── slug.ts        # /slug（slug 可用性檢查）
     ├── github.ts      # /github/posts + /github/sync
     ├── translate.ts   # /translation/status + /translation（純翻譯，不建立草稿）
-    ├── upload.ts      # /upload + /og-hero + /generate-og
+    ├── upload.ts      # /upload/r2 + /upload/temp（OG 圖片生成已移至前端）
     └── presets.ts     # translation presets CRUD
 ```
 
@@ -148,7 +148,7 @@ drafts.ts  → db.ts, github.ts, frontmatter.ts, slugify.ts
 slug.ts    → db.ts
 github.ts (routes) → db.ts, lib/github.ts, frontmatter.ts
 translate.ts → db.ts, translator.ts
-upload.ts  → db.ts, r2.ts, ogImage.ts
+upload.ts  → r2.ts
 presets.ts → db.ts
 github.ts  → frontmatter.ts（呼叫端解析，github 本身不依賴）
 ```

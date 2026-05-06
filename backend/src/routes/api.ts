@@ -15,9 +15,9 @@
  * - `DELETE /drafts` — 批量刪除草稿（batch，body: `{ draftIds }`）
  * - `GET /translation/status` — 檢查 AI 翻譯是否啟用
  * - `POST /translation` — 翻譯文章內容並回傳結果（不建立草稿）
- * - `POST /upload` — 上傳圖片到 R2
- * - `POST /drafts/:id/og-hero` — 暫存 OG 封面圖到 data/og-temp/，回傳 heroToken
- * - `POST /drafts/:id/generate-og` — 動態生成 OG 圖片並上傳到 R2
+ * - `POST /upload/r2` — 上傳圖片到 R2，回傳公開 URL
+ * - `POST /upload/temp` — 暫存圖片到 data/og-temp/，回傳 token（24 小時有效）
+ * - `GET /upload/temp/:token` — 以 base64 data URL 取得暫存圖片
  * - `GET/POST /presets` — 常用翻譯設定列表 / 新增
  * - `GET/PATCH/DELETE /presets/:id` — 單筆常用翻譯 CRUD
  *

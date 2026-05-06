@@ -134,29 +134,4 @@ drafts.get("/drafts/:id/translations", (c) => {
   return c.json(siblings);
 });
 
-// GET /api/drafts/:id/slug-check
-drafts.get("/drafts/:id/slug-check", (c) => {
-  const id = c.req.param("id");
-  const existing = db.query("SELECT id FROM drafts WHERE id = ?").get(id);
-  if (!existing) return c.json({ error: "Not found" }, 404);
-
-  const lang = c.req.query("lang");
-  if (!lang) return c.json({ error: "lang is required" }, 400);
-
-  const slug = (c.req.query("slug") ?? "").trim();
-  if (!slug) {
-    return c.json({ ok: false, reason: "required", message: "Slug is required", conflict: null });
-  }
-
-  const conflict = db.query(
-    "SELECT id, title, lang, slug, status, github_path FROM drafts WHERE lang = ? AND TRIM(slug) = ? AND id != ? LIMIT 1"
-  ).get(lang, slug, id) as { id: string; title: string; lang: string; slug: string; status: string; github_path: string } | null;
-
-  if (conflict) {
-    return c.json({ ok: false, reason: "conflict", message: "Slug already exists in this language", conflict });
-  }
-
-  return c.json({ ok: true, reason: "available", message: "Slug is available", conflict: null });
-});
-
 export default drafts;

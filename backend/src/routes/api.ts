@@ -10,7 +10,7 @@
  * - `POST /github/sync` — 將 GitHub 文章匯入本地 DB
  * - `POST /drafts/:id/resync` — 從 GitHub 覆蓋本地草稿
  * - `GET /drafts/:id/translations` — 取得相同 slug 的其他語言版本
- * - `GET /drafts/:id/slug-check` — 即時檢查 slug 可用性（同語言唯一性）
+ * - `GET /slug` — 查詢同 slug 的草稿；`slug` 必填，`lang` 選填（有帶則限同語言）
  * - `POST /drafts/:id/publish` — 對單篇開 GitHub PR
  * - `POST /batch-publish` — 多篇同時送出一個 PR
  * - `POST /batch-delete` — 批量刪除草稿
@@ -35,6 +35,7 @@ import publish from "./publish";
 import translate from "./translate";
 import upload from "./upload";
 import presets from "./presets";
+import slug from "./slug";
 
 const api = new Hono();
 
@@ -44,5 +45,6 @@ api.route("/", publish);
 api.route("/", translate);
 api.route("/", upload);
 api.route("/", presets);
+api.route("/", slug);
 
 export default api;

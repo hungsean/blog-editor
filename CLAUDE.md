@@ -117,23 +117,36 @@ For more information, read the Bun API docs in `node_modules/bun-types/docs/**.m
 
 ```
 src/
+├── types.ts           # 共用型別：Draft、TranslationPreset
 ├── lib/
 │   ├── db.ts          # SQLite 初始化與 migrations（Bun 啟動時執行，top-level await）
 │   ├── frontmatter.ts # Markdown frontmatter 解析與轉換（純函式，無 side effect）
 │   ├── github.ts      # GitHub REST API 封裝：讀取文章、開 PR
+│   ├── ogImage.ts     # Satori OG 圖片生成
+│   ├── prChecker.ts   # PR 狀態輪詢（merged → 更新 draft status）
 │   ├── r2.ts          # Cloudflare R2 圖片上傳（S3 相容 API）
+│   ├── slugify.ts     # URL-safe slug 轉換（publish/translate 共用）
 │   └── translator.ts  # OpenAI API 翻譯功能
 └── routes/
-    ├── api.ts         # 所有 /api/* REST endpoint（Hono router）
-    └── pages.ts       # 伺服器端 HTML 渲染頁面（列表頁、編輯器頁）
+    ├── api.ts         # 僅 mount 子 router（~15 行）
+    ├── drafts.ts      # CRUD + /resync + /translations + /slug-check
+    ├── github.ts      # /github/posts + /github/sync
+    ├── publish.ts     # /publish + /batch-publish + /batch-delete
+    ├── translate.ts   # /translate + /ai-translate + /translation-status
+    ├── upload.ts      # /upload + /og-hero + /generate-og
+    └── presets.ts     # translation presets CRUD
 ```
 
 ### 模組依賴關係
 
 ```
-api.ts → db.ts, github.ts, frontmatter.ts, translator.ts, r2.ts
-pages.ts → （無依賴，純 HTML template）
-github.ts → frontmatter.ts（呼叫端解析，github 本身不依賴）
+drafts.ts  → db.ts, github.ts, frontmatter.ts
+github.ts (routes) → db.ts, lib/github.ts, frontmatter.ts
+publish.ts → db.ts, github.ts, slugify.ts
+translate.ts → db.ts, translator.ts, slugify.ts
+upload.ts  → db.ts, r2.ts, ogImage.ts
+presets.ts → db.ts
+github.ts  → frontmatter.ts（呼叫端解析，github 本身不依賴）
 ```
 
 ### 關鍵設計決策

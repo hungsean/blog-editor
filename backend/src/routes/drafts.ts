@@ -287,20 +287,4 @@ drafts.post("/drafts/:id/resync", async (c) => {
   }
 });
 
-// GET /api/drafts/:id/translations
-drafts.get("/drafts/:id/translations", (c) => {
-  const id = c.req.param("id");
-  const draft = db.query("SELECT slug FROM drafts WHERE id = ?").get(id) as { slug: string } | null;
-  if (!draft) return c.json({ error: "Not found" }, 404);
-
-  const slug = draft.slug.trim();
-  if (!slug) return c.json([]);
-
-  const siblings = db.query(
-    "SELECT id, lang, title, status FROM drafts WHERE TRIM(slug) = ? AND id != ? ORDER BY lang"
-  ).all(slug, id) as { id: string; lang: string; title: string; status: string }[];
-
-  return c.json(siblings);
-});
-
 export default drafts;

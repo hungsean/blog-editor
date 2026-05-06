@@ -9,14 +9,12 @@
  * - `GET /github/posts` — 列出 GitHub 上的 .md 檔案
  * - `POST /github/sync` — 將 GitHub 文章匯入本地 DB
  * - `POST /drafts/:id/resync` — 從 GitHub 覆蓋本地草稿
- * - `GET /drafts/:id/translations` — 取得相同 slug 的其他語言版本
  * - `GET /slug` — 查詢同 slug 的草稿；`slug` 必填，`lang` 選填（有帶則限同語言）
  * - `POST /drafts/publish` — 多篇同時送出一個 PR（batch，body: `{ draftIds }`)
  * - `POST /drafts/:id/publish` — 對單篇開 GitHub PR
  * - `DELETE /drafts` — 批量刪除草稿（batch，body: `{ draftIds }`）
- * - `GET /translation-status` — 檢查 AI 翻譯是否啟用
- * - `POST /drafts/:id/translate` — 建立人工翻譯副本（直接複製內容）
- * - `POST /drafts/:id/ai-translate` — 使用 OpenAI 翻譯後建立副本
+ * - `GET /translation/status` — 檢查 AI 翻譯是否啟用
+ * - `POST /translation` — 翻譯文章內容並回傳結果（不建立草稿）
  * - `POST /upload` — 上傳圖片到 R2
  * - `POST /drafts/:id/og-hero` — 暫存 OG 封面圖到 data/og-temp/，回傳 heroToken
  * - `POST /drafts/:id/generate-og` — 動態生成 OG 圖片並上傳到 R2

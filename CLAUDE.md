@@ -105,6 +105,10 @@ bun --hot ./index.ts
 
 For more information, read the Bun API docs in `node_modules/bun-types/docs/**.mdx`.
 
+## 注意事項
+
+請勿再對 `/src` 或是 `/public` 進行編輯，此處程式已經過時，請改以 `/frontend`, `/backend`
+
 ## 文件規範
 
 - 修改任何函式的行為時，必須同步更新該函式的 JSDoc
@@ -132,7 +136,7 @@ src/
     ├── drafts.ts      # CRUD + /publish + /resync + /translations（batch delete/publish 也在此）
     ├── slug.ts        # /slug（slug 可用性檢查）
     ├── github.ts      # /github/posts + /github/sync
-    ├── translate.ts   # /translate + /ai-translate + /translation-status
+    ├── translate.ts   # /translation/status + /translation（純翻譯，不建立草稿）
     ├── upload.ts      # /upload + /og-hero + /generate-og
     └── presets.ts     # translation presets CRUD
 ```
@@ -143,7 +147,7 @@ src/
 drafts.ts  → db.ts, github.ts, frontmatter.ts, slugify.ts
 slug.ts    → db.ts
 github.ts (routes) → db.ts, lib/github.ts, frontmatter.ts
-translate.ts → db.ts, translator.ts, slugify.ts
+translate.ts → db.ts, translator.ts
 upload.ts  → db.ts, r2.ts, ogImage.ts
 presets.ts → db.ts
 github.ts  → frontmatter.ts（呼叫端解析，github 本身不依賴）

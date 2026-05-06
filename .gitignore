@@ -46,3 +46,5 @@ public/js/editor.bundle.js
 
 # server-specific docker compose overrides
 docker-compose.override.yml
+
+.vscode

@@ -7,7 +7,7 @@ services:
     volumes:
       - blog-editor-data:/data
     env_file:
-      - .env
+      - backend/.env
 
 volumes:
   blog-editor-data:

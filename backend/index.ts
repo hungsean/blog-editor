@@ -1,17 +1,19 @@
 import { Hono } from "hono";
 import { cors } from "hono/cors";
+import "./src/lib/db";
+import { startPRChecker } from "./src/lib/prChecker";
+import api from "./src/routes/api";
+import pages from "./src/routes/pages";
 
 const app = new Hono();
 
 app.use("/api/*", cors());
-
-app.get("/api/health", (c) => c.json({ ok: true }));
+app.route("/api", api);
+app.route("/", pages);
 
 const port = Number(Bun.env.PORT ?? 3000);
 
-Bun.serve({
-  port,
-  fetch: app.fetch,
-});
+startPRChecker();
+console.log(`Blog Editor running at http://localhost:${port}`);
 
-console.log(`Backend listening on http://localhost:${port}`);
+export default { port, fetch: app.fetch };

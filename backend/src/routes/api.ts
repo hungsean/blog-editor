@@ -11,9 +11,9 @@
  * - `POST /drafts/:id/resync` — 從 GitHub 覆蓋本地草稿
  * - `GET /drafts/:id/translations` — 取得相同 slug 的其他語言版本
  * - `GET /slug` — 查詢同 slug 的草稿；`slug` 必填，`lang` 選填（有帶則限同語言）
+ * - `POST /drafts/publish` — 多篇同時送出一個 PR（batch，body: `{ draftIds }`)
  * - `POST /drafts/:id/publish` — 對單篇開 GitHub PR
- * - `POST /batch-publish` — 多篇同時送出一個 PR
- * - `POST /batch-delete` — 批量刪除草稿
+ * - `DELETE /drafts` — 批量刪除草稿（batch，body: `{ draftIds }`）
  * - `GET /translation-status` — 檢查 AI 翻譯是否啟用
  * - `POST /drafts/:id/translate` — 建立人工翻譯副本（直接複製內容）
  * - `POST /drafts/:id/ai-translate` — 使用 OpenAI 翻譯後建立副本
@@ -31,7 +31,6 @@
 import { Hono } from "hono";
 import drafts from "./drafts";
 import github from "./github";
-import publish from "./publish";
 import translate from "./translate";
 import upload from "./upload";
 import presets from "./presets";
@@ -41,7 +40,6 @@ const api = new Hono();
 
 api.route("/", drafts);
 api.route("/", github);
-api.route("/", publish);
 api.route("/", translate);
 api.route("/", upload);
 api.route("/", presets);

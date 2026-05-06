@@ -129,10 +129,9 @@ src/
 │   └── translator.ts  # OpenAI API 翻譯功能
 └── routes/
     ├── api.ts         # 僅 mount 子 router（~15 行）
-    ├── drafts.ts      # CRUD + /resync + /translations
+    ├── drafts.ts      # CRUD + /publish + /resync + /translations（batch delete/publish 也在此）
     ├── slug.ts        # /slug（slug 可用性檢查）
     ├── github.ts      # /github/posts + /github/sync
-    ├── publish.ts     # /publish + /batch-publish + /batch-delete
     ├── translate.ts   # /translate + /ai-translate + /translation-status
     ├── upload.ts      # /upload + /og-hero + /generate-og
     └── presets.ts     # translation presets CRUD
@@ -141,10 +140,9 @@ src/
 ### 模組依賴關係
 
 ```
-drafts.ts  → db.ts, github.ts, frontmatter.ts
+drafts.ts  → db.ts, github.ts, frontmatter.ts, slugify.ts
 slug.ts    → db.ts
 github.ts (routes) → db.ts, lib/github.ts, frontmatter.ts
-publish.ts → db.ts, github.ts, slugify.ts
 translate.ts → db.ts, translator.ts, slugify.ts
 upload.ts  → db.ts, r2.ts, ogImage.ts
 presets.ts → db.ts

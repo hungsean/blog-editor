@@ -64,15 +64,18 @@ export async function translateDraft(params: {
 
   let glossarySection = "";
   if (presets && presets.length > 0) {
-    const lines = presets.map((p) => {
-      const kwList = p.keywords.join(", ");
-      const transEntries = Object.entries(p.translations)
-        .map(([lang, val]) => `${lang}: "${val}"`)
-        .join(", ");
-      const notePart = p.note ? `\n  Note: ${p.note}` : "";
-      return `- Keywords: [${kwList}] → ${transEntries}${notePart}`;
-    });
-    glossarySection = `\nFixed Translation Glossary (MUST follow exactly):\n${lines.join("\n")}\n`;
+    const lines = presets
+      .map((p) => {
+        const val = p.translations[targetLang];
+        if (!val) return null;
+        const kwList = p.keywords.join(", ");
+        const notePart = p.note ? `\n  Note: ${p.note}` : "";
+        return `- [${kwList}] → "${val}"${notePart}`;
+      })
+      .filter(Boolean);
+    if (lines.length > 0) {
+      glossarySection = `\nFixed Translation Glossary (MUST follow exactly):\n${lines.join("\n")}\n`;
+    }
   }
 
   const systemPrompt = `You are a professional translator specializing in technical blog posts.

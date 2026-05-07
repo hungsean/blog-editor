@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from "react";
 import { fetchPresets, deletePreset, type TranslationPreset } from "@/lib/api";
 import AddPresetForm from "@/components/settings/AddPresetForm";
+import EditPresetForm from "@/components/settings/EditPresetForm";
 
 export default function PresetSettings() {
     const [presets, setPresets] = useState<TranslationPreset[]>([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
     const [showAddForm, setShowAddForm] = useState(false);
+    const [editingId, setEditingId] = useState<string | null>(null);
 
     useEffect(() => {
         fetchPresets()
@@ -18,8 +20,9 @@ export default function PresetSettings() {
             .finally(() => setLoading(false));
     }, []);
 
-    async function handleDelete(id: string) {
-        if (!confirm("確定要刪除這個 preset 嗎？")) return;
+    async function handleDelete(id: string, keywords: string) {
+        const kws = (JSON.parse(keywords) as string[]).join(", ");
+        if (!confirm(`確定要刪除「${kws}」嗎？`)) return;
         await deletePreset(id);
         setPresets((prev) => prev.filter((p) => p.id !== id));
     }
@@ -27,6 +30,11 @@ export default function PresetSettings() {
     function handleCreated(preset: TranslationPreset) {
         setPresets((prev) => [...prev, preset]);
         setShowAddForm(false);
+    }
+
+    function handleUpdated(updated: TranslationPreset) {
+        setPresets((prev) => prev.map((p) => p.id === updated.id ? updated : p));
+        setEditingId(null);
     }
 
     return (
@@ -69,36 +77,46 @@ export default function PresetSettings() {
             {!loading && !error && presets.length > 0 && (
                 <ul className="flex flex-col gap-2">
                     {presets.map((preset) => (
-                        <li
-                            key={preset.id}
-                            className="flex flex-col rounded-md border border-gray-100 dark:border-gray-800 px-3 py-2 gap-2"
-                        >
-                            <div className="flex flex-wrap gap-1">
-                                {(JSON.parse(preset.keywords) as string[]).map((kw) => (
-                                    <span
-                                        key={kw}
-                                        className="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400"
-                                    >
-                                        {kw}
-                                    </span>
-                                ))}
-                            </div>
-                            {preset.note && (
-                                <span className="text-xs text-gray-400 dark:text-gray-500 break-words">
-                                    {preset.note}
-                                </span>
+                        <li key={preset.id}>
+                            {editingId === preset.id ? (
+                                <EditPresetForm
+                                    preset={preset}
+                                    onUpdated={handleUpdated}
+                                    onCancel={() => setEditingId(null)}
+                                />
+                            ) : (
+                                <div className="flex flex-col rounded-md border border-gray-100 dark:border-gray-800 px-3 py-2 gap-2">
+                                    <div className="flex flex-wrap gap-1">
+                                        {(JSON.parse(preset.keywords) as string[]).map((kw) => (
+                                            <span
+                                                key={kw}
+                                                className="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400"
+                                            >
+                                                {kw}
+                                            </span>
+                                        ))}
+                                    </div>
+                                    {preset.note && (
+                                        <span className="text-xs text-gray-400 dark:text-gray-500 break-words">
+                                            {preset.note}
+                                        </span>
+                                    )}
+                                    <div className="flex items-center gap-1 self-end">
+                                        <button
+                                            onClick={() => { setEditingId(preset.id); setShowAddForm(false); }}
+                                            className="text-xs text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 px-1.5 py-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors"
+                                        >
+                                            編輯
+                                        </button>
+                                        <button
+                                            onClick={() => handleDelete(preset.id, preset.keywords)}
+                                            className="text-xs text-red-400 hover:text-red-600 px-1.5 py-0.5 rounded hover:bg-red-50 dark:hover:bg-red-950 transition-colors"
+                                        >
+                                            刪除
+                                        </button>
+                                    </div>
+                                </div>
                             )}
-                            <div className="flex items-center gap-1 self-end">
-                                <button className="text-xs text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 px-1.5 py-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-800 transition-colors">
-                                    編輯
-                                </button>
-                                <button
-                                    onClick={() => handleDelete(preset.id)}
-                                    className="text-xs text-red-400 hover:text-red-600 px-1.5 py-0.5 rounded hover:bg-red-50 dark:hover:bg-red-950 transition-colors"
-                                >
-                                    刪除
-                                </button>
-                            </div>
                         </li>
                     ))}
                 </ul>

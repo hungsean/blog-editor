@@ -10,9 +10,17 @@ export type TranslationPreset = {
 };
 
 export async function fetchPresets(): Promise<TranslationPreset[]> {
-  const res = await fetch(`${BASE}/api/presets`);
+  const url = `${BASE}/api/presets`;
+  console.log("[fetchPresets] GET", url);
+  const res = await fetch(url);
+  console.log("[fetchPresets] status", res.status, res.statusText, res.ok);
   if (!res.ok) throw new Error("Failed to fetch presets");
-  return res.json();
+  console.log("[fetchPresets] res: ", res.body)
+  const text = await res.text();
+  console.log("[fetchPresets] raw body", text);
+  const data = JSON.parse(text);
+  console.log("[fetchPresets] data", data);
+  return data;
 }
 
 export async function createPreset(body: {

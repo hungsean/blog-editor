@@ -21,7 +21,7 @@ export default function TopBar() {
                     Settings
                 </button>
                 <Dialog open={settingsOpen} onOpenChange={setSettingsOpen}>
-                    <DialogContent>
+                    <DialogContent className="sm:max-w-2xl">
                         <DialogHeader>
                             <DialogTitle>Settings</DialogTitle>
                         </DialogHeader>

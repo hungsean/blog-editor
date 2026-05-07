@@ -5,6 +5,7 @@ import {
     DialogHeader,
     DialogTitle,
 } from "@/components/ui/dialog";
+import PresetSettings from "@/components/settings/PresetSettings";
 
 export default function TopBar() {
     const [settingsOpen, setSettingsOpen] = useState(false);
@@ -24,6 +25,9 @@ export default function TopBar() {
                         <DialogHeader>
                             <DialogTitle>Settings</DialogTitle>
                         </DialogHeader>
+                        <div className="flex flex-col gap-4 py-2">
+                            <PresetSettings />
+                        </div>
                     </DialogContent>
                 </Dialog>
                 <button className="px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors">

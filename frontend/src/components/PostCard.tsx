@@ -1,4 +1,5 @@
 import React from "react";
+import { useLocation } from "wouter";
 
 export interface Post {
     id: string;
@@ -19,13 +20,16 @@ const STATUS_STYLES = {
 };
 
 export default function PostCard({ post }: PostCardProps) {
+    const [, navigate] = useLocation();
+
     const handleEdit = (post: Post) => {
+        navigate(`/editor/${post.id}`);
     };
 
-    const handleSync = (post: Post) => {
+    const handleSync = (_post: Post) => {
     };
 
-    const handleDelete = (post: Post) => {
+    const handleDelete = (_post: Post) => {
     };
 
     return (

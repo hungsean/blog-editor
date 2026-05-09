@@ -2,6 +2,7 @@ import React, { useState, useEffect } from "react";
 import TopBar from "../components/TopBar";
 import PostList from "../components/PostList";
 import type { Post } from "../components/PostCard";
+import { fetchDrafts } from "../lib/api/drafts";
 
 export default function ListPage() {
     const [posts, setPosts] = useState<Post[]>([]);
@@ -9,10 +10,9 @@ export default function ListPage() {
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
-        fetch("/api/drafts")
-            .then((res) => res.json())
+        fetchDrafts()
             .then((data) => {
-                const mapped: Post[] = data.map((d: Record<string, string>) => ({
+                const mapped: Post[] = data.map((d) => ({
                     id: d.id,
                     title: d.title,
                     slug: d.slug,

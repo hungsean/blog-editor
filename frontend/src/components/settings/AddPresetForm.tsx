@@ -1,5 +1,5 @@
 import React from "react";
-import { createPreset, type TranslationPreset } from "@/lib/api";
+import { createPreset, type TranslationPreset } from "@/lib/api/presets";
 import PresetForm, { type PresetFormValues } from "@/components/settings/PresetForm";
 
 interface AddPresetFormProps {

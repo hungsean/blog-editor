@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { fetchPresets, deletePreset, type TranslationPreset } from "@/lib/api";
+import { fetchPresets, deletePreset, type TranslationPreset } from "@/lib/api/presets";
 import AddPresetForm from "@/components/settings/AddPresetForm";
 import EditPresetForm from "@/components/settings/EditPresetForm";
 

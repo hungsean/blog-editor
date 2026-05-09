@@ -48,3 +48,14 @@ export async function updateDraft(id: string, body: Partial<Draft>): Promise<Dra
   if (!res.ok) throw new Error("Failed to update draft");
   return res.json();
 }
+
+export type PublishResult =
+  | { success: true; pr_url: string }
+  | { success: false; reason: "required" | "conflict"; error: string; conflict?: unknown };
+
+export async function publishDraft(id: string): Promise<PublishResult> {
+  const res = await fetch(`${BASE}/api/drafts/${id}/publish`, { method: "POST" });
+  const json = await res.json();
+  if (!res.ok) return { success: false, reason: json.reason ?? "required", error: json.error ?? "Failed to open PR" };
+  return json;
+}

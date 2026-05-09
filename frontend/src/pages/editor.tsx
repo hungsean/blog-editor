@@ -1,9 +1,18 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
-import { fetchDraft, createDraft, updateDraft, type Draft } from "../lib/api/drafts";
+import { fetchDraft, createDraft, updateDraft, publishDraft, type Draft } from "../lib/api/drafts";
 import FieldsPanel, { type FieldValues } from "../components/editor/FieldsPanel";
 import MarkdownEditor from "../components/editor/MarkdownEditor";
 import MarkdownPreview from "../components/editor/MarkdownPreview";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogFooter,
+  DialogClose,
+} from "../components/ui/dialog";
 
 type SaveStatus = "saved" | "saving" | "unsaved" | "error";
 
@@ -60,6 +69,9 @@ export default function EditorPage({ id }: EditorPageProps) {
   const [content, setContent] = useState("");
   const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
   const [loading, setLoading] = useState(!!id);
+  const [publishing, setPublishing] = useState(false);
+  const [prError, setPrError] = useState<string | null>(null);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const draftIdRef = useRef<string | null>(id ?? null);
 
@@ -114,6 +126,26 @@ export default function EditorPage({ id }: EditorPageProps) {
     scheduleSave(next, content);
   }
 
+  async function handleConfirmPublish() {
+    if (!draftId || publishing) return;
+    setConfirmOpen(false);
+    setPrError(null);
+    setPublishing(true);
+    try {
+      await save(fields, content);
+      const result = await publishDraft(draftId);
+      if (result.success) {
+        window.open(result.pr_url, "_blank");
+      } else {
+        setPrError(result.error);
+      }
+    } catch (err) {
+      setPrError(String(err));
+    } finally {
+      setPublishing(false);
+    }
+  }
+
   function handleContentChange(next: string) {
     setContent(next);
     scheduleSave(fields, next);
@@ -161,11 +193,46 @@ export default function EditorPage({ id }: EditorPageProps) {
           >
             儲存
           </button>
-          <button className="px-3 py-1.5 text-sm font-medium text-white bg-green-600 hover:bg-green-500 rounded-md transition-colors">
-            送出 PR
+          <button
+            onClick={() => setConfirmOpen(true)}
+            disabled={publishing || saveStatus === "saving"}
+            className="px-3 py-1.5 text-sm font-medium text-white bg-green-600 hover:bg-green-500 disabled:opacity-50 rounded-md transition-colors"
+          >
+            {publishing ? "送出中..." : "送出 PR"}
           </button>
         </div>
       </header>
+
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent showCloseButton={false}>
+          <DialogHeader>
+            <DialogTitle>確認送出 PR</DialogTitle>
+            <DialogDescription>
+              將會儲存目前內容並對 GitHub 開一個 Pull Request，確定要繼續嗎？
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <DialogClose
+              render={
+                <button className="px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors" />
+              }
+            >
+              取消
+            </DialogClose>
+            <button
+              onClick={handleConfirmPublish}
+              className="px-3 py-1.5 text-sm font-medium text-white bg-green-600 hover:bg-green-500 rounded-md transition-colors"
+            >
+              確認送出
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      {prError && (
+        <div className="px-6 py-2 bg-red-50 dark:bg-red-950 border-b border-red-200 dark:border-red-800 text-sm text-red-600 dark:text-red-400">
+          PR 送出失敗：{prError}
+        </div>
+      )}
 
       {/* Fields panel */}
       <FieldsPanel fields={fields} onChange={handleFieldsChange} />

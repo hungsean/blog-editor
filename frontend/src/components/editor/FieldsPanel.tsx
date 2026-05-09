@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { ChevronDown } from "lucide-react";
+import DatePicker from "./DatePicker";
 
 export interface FieldValues {
   title: string;
@@ -72,8 +73,9 @@ export default function FieldsPanel({ fields, onChange }: FieldsPanelProps) {
         <div className="px-6 pb-5 pt-1 grid grid-cols-2 gap-x-6 gap-y-4">
           {/* Title */}
           <div className="col-span-2 flex flex-col gap-1">
-            <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Title</label>
+            <label htmlFor="field-title" className="text-xs font-medium text-gray-500 dark:text-gray-400">Title</label>
             <input
+              id="field-title"
               className={inputCls}
               type="text"
               value={fields.title}
@@ -84,8 +86,9 @@ export default function FieldsPanel({ fields, onChange }: FieldsPanelProps) {
 
           {/* Slug */}
           <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Slug</label>
+            <label htmlFor="field-slug" className="text-xs font-medium text-gray-500 dark:text-gray-400">Slug</label>
             <input
+              id="field-slug"
               className={inputCls}
               type="text"
               value={fields.slug}
@@ -96,8 +99,9 @@ export default function FieldsPanel({ fields, onChange }: FieldsPanelProps) {
 
           {/* Lang */}
           <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Language</label>
+            <label htmlFor="field-lang" className="text-xs font-medium text-gray-500 dark:text-gray-400">Language</label>
             <select
+              id="field-lang"
               className={inputCls}
               value={fields.lang}
               onChange={(e) => set("lang", e.target.value)}
@@ -110,8 +114,9 @@ export default function FieldsPanel({ fields, onChange }: FieldsPanelProps) {
 
           {/* Description */}
           <div className="col-span-2 flex flex-col gap-1">
-            <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Description</label>
+            <label htmlFor="field-description" className="text-xs font-medium text-gray-500 dark:text-gray-400">Description</label>
             <textarea
+              id="field-description"
               className={`${inputCls} resize-none`}
               rows={2}
               value={fields.description}
@@ -122,7 +127,7 @@ export default function FieldsPanel({ fields, onChange }: FieldsPanelProps) {
 
           {/* Tags */}
           <div className="col-span-2 flex flex-col gap-1">
-            <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Tags</label>
+            <label htmlFor="field-tags" className="text-xs font-medium text-gray-500 dark:text-gray-400">Tags</label>
             <div className={`${inputCls} flex flex-wrap gap-1.5 min-h-9 h-auto py-1.5`}>
               {fields.tags.map((tag) => (
                 <span
@@ -140,7 +145,10 @@ export default function FieldsPanel({ fields, onChange }: FieldsPanelProps) {
                 </span>
               ))}
               <input
+                id="field-tags"
                 type="text"
+                inputMode="text"
+                enterKeyHint="done"
                 className="flex-1 min-w-24 bg-transparent outline-none text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-400"
                 value={tagInput}
                 onChange={(e) => setTagInput(e.target.value)}
@@ -153,20 +161,16 @@ export default function FieldsPanel({ fields, onChange }: FieldsPanelProps) {
 
           {/* pubDate */}
           <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-gray-500 dark:text-gray-400">Publish Date</label>
-            <input
-              className={inputCls}
-              type="date"
-              value={fields.pubDate}
-              onChange={(e) => set("pubDate", e.target.value)}
-            />
+            <label htmlFor="field-pubdate" className="text-xs font-medium text-gray-500 dark:text-gray-400">Publish Date</label>
+            <DatePicker id="field-pubdate" value={fields.pubDate} onChange={(v) => set("pubDate", v)} />
           </div>
 
           {/* nsfw */}
           <div className="flex flex-col gap-1 justify-center">
-            <label className="text-xs font-medium text-gray-500 dark:text-gray-400">NSFW</label>
-            <label className="flex items-center gap-2 cursor-pointer">
+            <span className="text-xs font-medium text-gray-500 dark:text-gray-400">NSFW</span>
+            <label htmlFor="field-nsfw" className="flex items-center gap-2 cursor-pointer">
               <input
+                id="field-nsfw"
                 type="checkbox"
                 checked={fields.nsfw}
                 onChange={(e) => set("nsfw", e.target.checked)}
@@ -178,8 +182,9 @@ export default function FieldsPanel({ fields, onChange }: FieldsPanelProps) {
 
           {/* ogImage */}
           <div className="col-span-2 flex flex-col gap-1">
-            <label className="text-xs font-medium text-gray-500 dark:text-gray-400">OG Image URL</label>
+            <label htmlFor="field-ogimage" className="text-xs font-medium text-gray-500 dark:text-gray-400">OG Image URL</label>
             <input
+              id="field-ogimage"
               className={inputCls}
               type="url"
               value={fields.ogImage}

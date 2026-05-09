@@ -3,9 +3,39 @@ import { EditorState } from "@codemirror/state";
 import { EditorView, keymap, drawSelection, highlightActiveLine } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
-import { syntaxHighlighting, defaultHighlightStyle, indentOnInput, bracketMatching } from "@codemirror/language";
+import { syntaxHighlighting, indentOnInput, bracketMatching, HighlightStyle } from "@codemirror/language";
+import { tags } from "@lezer/highlight";
 import { closeBrackets, closeBracketsKeymap, autocompletion, completionKeymap } from "@codemirror/autocomplete";
-import { oneDark } from "@codemirror/theme-one-dark";
+import { oneDarkTheme } from "@codemirror/theme-one-dark";
+
+const highlightStyle = HighlightStyle.define([
+  { tag: tags.keyword, color: "#c678dd" },
+  { tag: [tags.name, tags.deleted, tags.character, tags.propertyName, tags.macroName], color: "#e06c75" },
+  { tag: [tags.function(tags.variableName), tags.labelName], color: "#61afef" },
+  { tag: [tags.color, tags.constant(tags.name), tags.standard(tags.name)], color: "#d19a66" },
+  { tag: [tags.definition(tags.name), tags.separator], color: "#abb2bf" },
+  { tag: [tags.typeName, tags.className, tags.number, tags.changed, tags.annotation, tags.modifier, tags.self, tags.namespace], color: "#e5c07b" },
+  { tag: [tags.operator, tags.operatorKeyword, tags.escape, tags.regexp, tags.special(tags.string)], color: "#56b6c2" },
+  { tag: tags.meta, color: "#7d8799" },
+  { tag: tags.comment, color: "#7d8799", fontStyle: "italic" },
+  { tag: tags.strong, fontWeight: "bold" },
+  { tag: tags.emphasis, fontStyle: "italic" },
+  { tag: tags.strikethrough, textDecoration: "line-through" },
+  // headings: bright white gradient h1→h6
+  { tag: tags.heading, fontWeight: "bold", color: "#ffffff" },
+  { tag: tags.heading1, color: "#ffffff", fontWeight: "bold" },
+  { tag: tags.heading2, color: "#e8e8e8", fontWeight: "bold" },
+  { tag: tags.heading3, color: "#d8d8d8", fontWeight: "bold" },
+  { tag: tags.heading4, color: "#c8c8c8", fontWeight: "bold" },
+  { tag: tags.heading5, color: "#b8b8b8", fontWeight: "bold" },
+  { tag: tags.heading6, color: "#a8a8a8", fontWeight: "bold" },
+  // links: bright blue
+  { tag: tags.link, color: "#7eb8ff", textDecoration: "underline" },
+  { tag: tags.url, color: "#7eb8ff" },
+  { tag: [tags.atom, tags.bool, tags.special(tags.variableName)], color: "#d19a66" },
+  { tag: [tags.processingInstruction, tags.string, tags.inserted], color: "#98c379" },
+  { tag: tags.invalid, color: "#ffffff" },
+]);
 
 interface MarkdownEditorProps {
   value: string;
@@ -33,7 +63,6 @@ export default function MarkdownEditor({ value, onChange, className }: MarkdownE
           closeBrackets(),
           autocompletion(),
           highlightActiveLine(),
-          syntaxHighlighting(defaultHighlightStyle),
           keymap.of([
             ...defaultKeymap,
             ...historyKeymap,
@@ -42,12 +71,14 @@ export default function MarkdownEditor({ value, onChange, className }: MarkdownE
             indentWithTab,
           ]),
           markdown({ base: markdownLanguage }),
-          oneDark,
+          oneDarkTheme,
+          syntaxHighlighting(highlightStyle),
           EditorView.updateListener.of((update) => {
             if (update.docChanged) {
               onChangeRef.current(update.state.doc.toString());
             }
           }),
+          EditorView.lineWrapping,
           EditorView.theme({
             "&": { height: "100%" },
             ".cm-scroller": { overflow: "auto", fontFamily: "var(--font-mono, monospace)" },

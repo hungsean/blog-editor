@@ -53,6 +53,11 @@ export type PublishResult =
   | { success: true; pr_url: string }
   | { success: false; reason: "required" | "conflict"; error: string; conflict?: unknown };
 
+export async function deleteDraft(id: string): Promise<void> {
+  const res = await fetch(`${BASE}/api/drafts/${id}`, { method: "DELETE" });
+  if (!res.ok) throw new Error("Failed to delete draft");
+}
+
 export async function publishDraft(id: string): Promise<PublishResult> {
   const res = await fetch(`${BASE}/api/drafts/${id}/publish`, { method: "POST" });
   const json = await res.json();

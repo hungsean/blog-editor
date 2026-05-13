@@ -3,9 +3,10 @@ import PostCard, { type Post } from "./PostCard";
 
 interface PostListProps {
     posts: Post[];
+    onDelete?: (id: string) => void;
 }
 
-export default function PostList({ posts }: PostListProps) {
+export default function PostList({ posts, onDelete }: PostListProps) {
     if (posts.length === 0) {
         return (
             <div className="flex flex-col items-center justify-center py-24 text-gray-400 dark:text-gray-600">
@@ -20,6 +21,7 @@ export default function PostList({ posts }: PostListProps) {
                 <PostCard
                     key={post.id}
                     post={post}
+                    onDelete={onDelete}
                 />
             ))}
         </div>

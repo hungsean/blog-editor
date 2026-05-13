@@ -36,7 +36,12 @@ export default function ListPage() {
                 {error && (
                     <p className="text-center text-red-500 py-24">{error}</p>
                 )}
-                {!loading && !error && <PostList posts={posts} />}
+                {!loading && !error && (
+                    <PostList
+                        posts={posts}
+                        onDelete={(id) => setPosts((prev) => prev.filter((p) => p.id !== id))}
+                    />
+                )}
             </div>
         </main>
     );

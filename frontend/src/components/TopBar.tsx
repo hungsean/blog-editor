@@ -8,16 +8,39 @@ import {
 } from "@/components/ui/dialog";
 import PresetSettings from "@/components/settings/PresetSettings";
 import { createDraft } from "@/lib/api/drafts";
+import { fetchGithubPosts, syncFromGithub } from "@/lib/api/github";
 
 interface TopBarProps {
     selectMode?: boolean;
     onToggleSelectMode?: () => void;
+    onSynced?: () => void;
 }
 
-export default function TopBar({ selectMode = false, onToggleSelectMode }: TopBarProps) {
+export default function TopBar({ selectMode = false, onToggleSelectMode, onSynced }: TopBarProps) {
     const [settingsOpen, setSettingsOpen] = useState(false);
+    const [syncing, setSyncing] = useState(false);
     const [, navigate] = useLocation();
     const [creating, setCreating] = useState(false);
+
+    async function handleSync() {
+        if (syncing) return;
+        setSyncing(true);
+        try {
+            const posts = await fetchGithubPosts();
+            const paths = posts.map((p) => p.path);
+            if (paths.length > 0) {
+                const result = await syncFromGithub(paths);
+                if (result.errors.length > 0) {
+                    console.error("[sync] partial failures:", result.errors);
+                }
+                if (result.imported.length > 0 || result.updated.length > 0) {
+                    onSynced?.();
+                }
+            }
+        } finally {
+            setSyncing(false);
+        }
+    }
 
     async function handleNewPost() {
         if (creating) return;
@@ -60,8 +83,12 @@ export default function TopBar({ selectMode = false, onToggleSelectMode }: TopBa
                 >
                     Select Mode
                 </button>
-                <button className="px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors">
-                    Sync from GitHub
+                <button
+                    className="px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 disabled:opacity-50 rounded-md transition-colors"
+                    onClick={handleSync}
+                    disabled={syncing}
+                >
+                    {syncing ? "Syncing..." : "Sync from GitHub"}
                 </button>
                 <button
                     className="px-3 py-1.5 text-sm font-medium text-white bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded-md transition-colors"

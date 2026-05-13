@@ -39,9 +39,10 @@ github.post("/github/sync", async (c) => {
       const { lang, slug } = extractFromPath(path);
       const now = new Date().toISOString();
 
-      const existing = db.query("SELECT id FROM drafts WHERE github_path = ?").get(path) as { id: string } | null;
+      const existing = db.query("SELECT id, github_sha FROM drafts WHERE github_path = ?").get(path) as { id: string; github_sha: string } | null;
 
       if (existing) {
+        if (existing.github_sha === sha) continue;
         db.query(
           `UPDATE drafts SET title=?, lang=?, slug=?, description=?, tags=?, fields=?, content=?, github_sha=?, updated_at=? WHERE id=?`
         ).run(title, lang, slug, description, tags, fields, mdBody, sha, now, existing.id);
@@ -50,7 +51,7 @@ github.post("/github/sync", async (c) => {
         const newId = nanoid();
         db.query(
           `INSERT INTO drafts (id, title, lang, slug, description, tags, fields, content, status, pr_url, github_path, github_sha, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft', '', ?, ?, ?, ?)`
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'published', '', ?, ?, ?, ?)`
         ).run(newId, title, lang, slug, description, tags, fields, mdBody, path, sha, now, now);
         imported.push(path);
       }

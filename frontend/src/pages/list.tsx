@@ -12,7 +12,8 @@ export default function ListPage() {
     const [selectMode, setSelectMode] = useState(false);
     const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
-    useEffect(() => {
+    const loadDrafts = useCallback(() => {
+        setLoading(true);
         fetchDrafts()
             .then((data) => {
                 const mapped: Post[] = data.map((d) => ({
@@ -28,6 +29,8 @@ export default function ListPage() {
             .catch((err) => setError(String(err)))
             .finally(() => setLoading(false));
     }, []);
+
+    useEffect(() => { loadDrafts(); }, [loadDrafts]);
 
     const toggleSelectMode = useCallback(() => {
         setSelectMode((prev) => !prev);
@@ -63,7 +66,7 @@ export default function ListPage() {
 
     return (
         <main className="app min-h-screen bg-gray-50 dark:bg-gray-950">
-            <TopBar selectMode={selectMode} onToggleSelectMode={toggleSelectMode} />
+            <TopBar selectMode={selectMode} onToggleSelectMode={toggleSelectMode} onSynced={loadDrafts} />
             {selectMode && (
                 <SelectModeBar
                     selectedCount={selectedIds.size}

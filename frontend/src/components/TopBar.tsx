@@ -9,7 +9,12 @@ import {
 import PresetSettings from "@/components/settings/PresetSettings";
 import { createDraft } from "@/lib/api/drafts";
 
-export default function TopBar() {
+interface TopBarProps {
+    selectMode?: boolean;
+    onToggleSelectMode?: () => void;
+}
+
+export default function TopBar({ selectMode = false, onToggleSelectMode }: TopBarProps) {
     const [settingsOpen, setSettingsOpen] = useState(false);
     const [, navigate] = useLocation();
     const [creating, setCreating] = useState(false);
@@ -45,7 +50,14 @@ export default function TopBar() {
                         </div>
                     </DialogContent>
                 </Dialog>
-                <button className="px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors">
+                <button
+                    className={`px-3 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                        selectMode
+                            ? "text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/30"
+                            : "text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800"
+                    }`}
+                    onClick={onToggleSelectMode}
+                >
                     Select Mode
                 </button>
                 <button className="px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors">

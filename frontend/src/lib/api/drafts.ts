@@ -58,6 +58,31 @@ export async function deleteDraft(id: string): Promise<void> {
   if (!res.ok) throw new Error("Failed to delete draft");
 }
 
+export async function bulkDeleteDrafts(draftIds: string[]): Promise<{ deleted: string[]; count: number }> {
+  const res = await fetch(`${BASE}/api/drafts`, {
+    method: "DELETE",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ draftIds }),
+  });
+  if (!res.ok) throw new Error("Failed to bulk delete drafts");
+  return res.json();
+}
+
+export type BulkPublishResult =
+  | { success: true; pr_url: string }
+  | { success: false; reason: string; error: string; conflicts?: unknown; drafts?: unknown };
+
+export async function bulkPublishDrafts(draftIds: string[]): Promise<BulkPublishResult> {
+  const res = await fetch(`${BASE}/api/drafts/publish`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ draftIds }),
+  });
+  const json = await res.json();
+  if (!res.ok) return { success: false, reason: json.reason ?? "unknown", error: json.error ?? "Failed to publish drafts", ...json };
+  return json;
+}
+
 export async function publishDraft(id: string): Promise<PublishResult> {
   const res = await fetch(`${BASE}/api/drafts/${id}/publish`, { method: "POST" });
   const json = await res.json();

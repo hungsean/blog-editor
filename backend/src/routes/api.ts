@@ -18,6 +18,9 @@
  * - `POST /upload/r2` — 上傳圖片到 R2，回傳公開 URL
  * - `POST /upload/temp` — 暫存圖片到 data/og-temp/，回傳 token（24 小時有效）
  * - `GET /upload/temp/:token` — 以 base64 data URL 取得暫存圖片
+ * - `GET /images` — 列出圖片庫（讀本地 DB）
+ * - `POST /images/sync` — 從 R2 uploads/ 同步圖片清單進 DB
+ * - `POST /images/upload` — 上傳圖片到 R2 並寫入圖片庫
  * - `GET/POST /presets` — 常用翻譯設定列表 / 新增
  * - `GET/PATCH/DELETE /presets/:id` — 單筆常用翻譯 CRUD
  *
@@ -31,6 +34,7 @@ import drafts from "./drafts";
 import github from "./github";
 import translate from "./translate";
 import upload from "./upload";
+import images from "./images";
 import presets from "./presets";
 import slug from "./slug";
 
@@ -40,6 +44,7 @@ api.route("/", drafts);
 api.route("/", github);
 api.route("/", translate);
 api.route("/", upload);
+api.route("/", images);
 api.route("/", presets);
 api.route("/", slug);
 

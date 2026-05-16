@@ -25,13 +25,15 @@ src/
 │   ├── utils.ts          # shadcn/ui 工具函式（cn）
 │   └── api/
 │       ├── drafts.ts     # fetch/create/update draft API
+│       ├── images.ts     # 圖片庫 list/sync/upload API
 │       └── presets.ts    # translation presets CRUD API
 ├── components/
 │   ├── ui/               # shadcn/ui 自動產生的元件（勿手動修改）
 │   ├── editor/
-│   │   ├── MarkdownEditor.tsx   # CodeMirror 6 React wrapper
-│   │   ├── MarkdownPreview.tsx  # marked + hljs preview
-│   │   └── FieldsPanel.tsx      # 可折疊的 frontmatter 欄位面板
+│   │   ├── MarkdownEditor.tsx     # CodeMirror 6 React wrapper（含上傳圖片工具列）
+│   │   ├── MarkdownPreview.tsx    # marked + hljs preview
+│   │   ├── ImagePickerDialog.tsx  # 圖片庫挑選對話框（sync / upload / 選圖插入）
+│   │   └── FieldsPanel.tsx        # 可折疊的 frontmatter 欄位面板
 │   ├── settings/
 │   │   ├── PresetSettings.tsx
 │   │   ├── PresetForm.tsx

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { EditorState } from "@codemirror/state";
 import { EditorView, keymap, drawSelection, highlightActiveLine } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
@@ -7,6 +7,7 @@ import { syntaxHighlighting, indentOnInput, bracketMatching, HighlightStyle } fr
 import { tags } from "@lezer/highlight";
 import { closeBrackets, closeBracketsKeymap, autocompletion, completionKeymap } from "@codemirror/autocomplete";
 import { oneDarkTheme } from "@codemirror/theme-one-dark";
+import ImagePickerDialog from "./ImagePickerDialog";
 
 const highlightStyle = HighlightStyle.define([
   { tag: tags.keyword, color: "#c678dd" },
@@ -48,6 +49,7 @@ export default function MarkdownEditor({ value, onChange, className }: MarkdownE
   const viewRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+  const [pickerOpen, setPickerOpen] = useState(false);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -105,5 +107,38 @@ export default function MarkdownEditor({ value, onChange, className }: MarkdownE
     }
   }, [value]);
 
-  return <div ref={containerRef} className={className} />;
+  /**
+   * 在目前游標／選取範圍插入 markdown 圖片語法。
+   *
+   * @remarks
+   * 插入後游標停在 `![` 與 `]` 之間（alt 文字處），方便接著輸入描述。
+   * 有選取範圍時，選取的文字會被圖片語法取代。
+   */
+  function insertImage(url: string) {
+    const view = viewRef.current;
+    if (!view) return;
+    const snippet = `![](${url})`;
+    const { from, to } = view.state.selection.main;
+    view.dispatch({
+      changes: { from, to, insert: snippet },
+      selection: { anchor: from + 2 },
+    });
+    view.focus();
+  }
+
+  return (
+    <div className={`flex flex-col ${className ?? ""}`}>
+      <div className="flex items-center gap-2 border-b border-gray-200 dark:border-gray-800 px-3 py-2 shrink-0">
+        <button
+          type="button"
+          onClick={() => setPickerOpen(true)}
+          className="px-2.5 py-1 text-xs font-medium text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
+        >
+          上傳圖片
+        </button>
+      </div>
+      <div ref={containerRef} className="flex-1 min-h-0" />
+      <ImagePickerDialog open={pickerOpen} onOpenChange={setPickerOpen} onSelect={insertImage} />
+    </div>
+  );
 }

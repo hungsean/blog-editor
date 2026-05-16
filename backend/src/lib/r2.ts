@@ -11,7 +11,7 @@
  * - 若任何一個環境變數未設定，`isR2Enabled()` 回傳 false，上傳功能全部停用
  * - `R2_PUBLIC_URL` 尾部斜線會自動去除，避免雙斜線 URL
  */
-import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
+import { S3Client, PutObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 
 const ACCOUNT_ID = process.env.R2_ACCOUNT_ID;
 const ACCESS_KEY_ID = process.env.R2_ACCESS_KEY_ID;
@@ -56,4 +56,44 @@ function getClient() {
 export async function uploadToR2(key: string, body: Uint8Array, contentType: string): Promise<string> {
   await getClient().send(new PutObjectCommand({ Bucket: BUCKET, Key: key, Body: body, ContentType: contentType }));
   return `${PUBLIC_URL}/${key}`;
+}
+
+/** R2 物件的精簡描述，供圖片庫同步使用。 */
+export interface R2Object {
+  key: string;
+  url: string;
+  size: number;
+  lastModified: string;
+}
+
+/**
+ * 列出 R2 bucket 中指定前綴下的所有物件。
+ *
+ * @param prefix - 物件鍵值前綴，例如 `uploads/`
+ * @returns 物件清單，含公開 URL；不含「資料夾標記」（鍵值以 `/` 結尾者）
+ * @throws 若列表失敗，S3Client 會拋出錯誤
+ *
+ * @remarks
+ * ListObjectsV2 單次最多回傳 1000 筆，因此以 `ContinuationToken` 迴圈取完所有分頁。
+ * 呼叫前請先確認 `isR2Enabled()` 為 true。
+ */
+export async function listR2Objects(prefix: string): Promise<R2Object[]> {
+  const out: R2Object[] = [];
+  let token: string | undefined;
+  do {
+    const res = await getClient().send(
+      new ListObjectsV2Command({ Bucket: BUCKET, Prefix: prefix, ContinuationToken: token })
+    );
+    for (const obj of res.Contents ?? []) {
+      if (!obj.Key || obj.Key.endsWith("/")) continue;
+      out.push({
+        key: obj.Key,
+        url: `${PUBLIC_URL}/${obj.Key}`,
+        size: obj.Size ?? 0,
+        lastModified: (obj.LastModified ?? new Date()).toISOString(),
+      });
+    }
+    token = res.IsTruncated ? res.NextContinuationToken : undefined;
+  } while (token);
+  return out;
 }

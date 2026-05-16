@@ -49,6 +49,17 @@ db.exec(`
   )
 `);
 
+// 圖片庫：R2 物件的本地快取。
+// key 為 R2 物件鍵值（PRIMARY KEY），sync 與 upload 都以此 upsert。
+db.exec(`
+  CREATE TABLE IF NOT EXISTS images (
+    key         TEXT PRIMARY KEY,
+    url         TEXT NOT NULL,
+    size        INTEGER NOT NULL DEFAULT 0,
+    uploaded_at TEXT NOT NULL
+  )
+`);
+
 // Migrations: add new columns if they don't exist
 for (const [col, def] of [
   ["github_path", "TEXT DEFAULT ''"],

@@ -23,6 +23,7 @@ export default function ListPage() {
                     lang: d.lang,
                     status: d.status === "published" ? "published" : d.status === "pr_opened" ? "pr_opened" : "draft",
                     updatedAt: d.updated_at?.slice(0, 10) ?? "",
+                    github_path: d.github_path ?? "",
                 }));
                 setPosts(mapped);
             })

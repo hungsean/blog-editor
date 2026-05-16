@@ -22,10 +22,11 @@ github.get("/github/posts", async (c) => {
 
 // POST /api/github/sync
 github.post("/github/sync", async (c) => {
-  const body = await c.req.json().catch(() => ({})) as { paths?: string[] };
+  const body = await c.req.json().catch(() => ({})) as { paths?: string[]; force?: boolean };
   if (!Array.isArray(body.paths) || body.paths.length === 0) {
     return c.json({ error: "paths is required" }, 400);
   }
+  const force = body.force === true;
 
   const imported: string[] = [];
   const updated: string[] = [];
@@ -42,7 +43,7 @@ github.post("/github/sync", async (c) => {
       const existing = db.query("SELECT id, github_sha FROM drafts WHERE github_path = ?").get(path) as { id: string; github_sha: string } | null;
 
       if (existing) {
-        if (existing.github_sha === sha) continue;
+        if (!force && existing.github_sha === sha) continue;
         db.query(
           `UPDATE drafts SET title=?, lang=?, slug=?, description=?, tags=?, fields=?, content=?, github_sha=?, updated_at=? WHERE id=?`
         ).run(title, lang, slug, description, tags, fields, mdBody, sha, now, existing.id);

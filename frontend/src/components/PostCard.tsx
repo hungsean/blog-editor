@@ -9,6 +9,7 @@ import {
     DialogTitle,
 } from "./ui/dialog";
 import { deleteDraft } from "../lib/api/drafts";
+import { syncFromGithub } from "../lib/api/github";
 
 export interface Post {
     id: string;
@@ -17,6 +18,7 @@ export interface Post {
     lang: string;
     status: "published" | "draft" | "pr_opened";
     updatedAt: string;
+    github_path: string;
 }
 
 interface PostCardProps {
@@ -39,17 +41,37 @@ export default function PostCard({ post, onDelete, selectMode = false, selected 
     const [deleting, setDeleting] = useState(false);
     const [deleteError, setDeleteError] = useState<string | null>(null);
 
+    const [syncConfirmOpen, setSyncConfirmOpen] = useState(false);
+    const [syncing, setSyncing] = useState(false);
+    const [syncError, setSyncError] = useState<string | null>(null);
+
     const handleEdit = (post: Post) => {
         navigate(`/editor/${post.id}`);
-    };
-
-    const handleSync = (_post: Post) => {
     };
 
     const handleOpenChange = (open: boolean) => {
         if (deleting) return;
         setConfirmOpen(open);
         if (!open) setDeleteError(null);
+    };
+
+    const handleSyncOpenChange = (open: boolean) => {
+        if (syncing) return;
+        setSyncConfirmOpen(open);
+        if (!open) setSyncError(null);
+    };
+
+    const confirmSync = async () => {
+        setSyncing(true);
+        setSyncError(null);
+        try {
+            await syncFromGithub([post.github_path], true);
+            setSyncConfirmOpen(false);
+        } catch (err) {
+            setSyncError(err instanceof Error ? err.message : "同步失敗，請再試一次");
+        } finally {
+            setSyncing(false);
+        }
     };
 
     const confirmDelete = async () => {
@@ -110,12 +132,14 @@ export default function PostCard({ post, onDelete, selectMode = false, selected 
                 {/* Button area */}
                 {!selectMode && (
                     <div className="flex items-center gap-2 shrink-0">
-                        <button
-                            onClick={() => handleSync(post)}
-                            className="px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
-                        >
-                            Sync
-                        </button>
+                        {post.status === "published" && (
+                            <button
+                                onClick={() => setSyncConfirmOpen(true)}
+                                className="px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
+                            >
+                                Sync
+                            </button>
+                        )}
                         <button
                             onClick={() => handleEdit(post)}
                             className="px-3 py-1.5 text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"
@@ -131,6 +155,36 @@ export default function PostCard({ post, onDelete, selectMode = false, selected 
                     </div>
                 )}
             </div>
+
+            <Dialog open={syncConfirmOpen} onOpenChange={handleSyncOpenChange}>
+                <DialogContent showCloseButton={!syncing}>
+                    <DialogHeader>
+                        <DialogTitle>確認同步</DialogTitle>
+                        <DialogDescription>
+                            將從 GitHub 覆蓋「{post.title}」的本地內容，此操作無法復原。
+                        </DialogDescription>
+                    </DialogHeader>
+                    {syncError && (
+                        <p className="text-sm text-red-500 dark:text-red-400">{syncError}</p>
+                    )}
+                    <DialogFooter>
+                        <button
+                            onClick={() => handleSyncOpenChange(false)}
+                            disabled={syncing}
+                            className="px-4 py-2 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
+                        >
+                            取消
+                        </button>
+                        <button
+                            onClick={confirmSync}
+                            disabled={syncing}
+                            className="px-4 py-2 text-sm font-medium text-white bg-blue-500 hover:bg-blue-600 disabled:opacity-50 rounded-md transition-colors"
+                        >
+                            {syncing ? "同步中..." : "確認覆蓋"}
+                        </button>
+                    </DialogFooter>
+                </DialogContent>
+            </Dialog>
 
             <Dialog open={confirmOpen} onOpenChange={handleOpenChange}>
                 <DialogContent showCloseButton={!deleting}>

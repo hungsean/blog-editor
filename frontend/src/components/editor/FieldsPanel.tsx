@@ -2,6 +2,8 @@ import React, { useState } from "react";
 import { ChevronDown } from "lucide-react";
 import DatePicker from "./DatePicker";
 import OgImageDialog from "./OgImageDialog";
+import TranslationButtons from "./TranslationButtons";
+import { LANG_OPTIONS } from "../../lib/langs";
 
 export interface FieldValues {
   title: string;
@@ -17,11 +19,11 @@ export interface FieldValues {
 interface FieldsPanelProps {
   fields: FieldValues;
   onChange: (fields: FieldValues) => void;
+  /** 文章正文，翻譯功能需要。 */
+  content: string;
   /** 生成 OG 圖時用來組 R2 鍵值 `og/{draftId}.png`。 */
   draftId: string | null;
 }
-
-const LANG_OPTIONS = ["zh-tw", "en", "ja"];
 
 const inputCls =
   "w-full px-3 py-2 text-sm rounded-md border border-gray-200 dark:border-gray-700 " +
@@ -35,7 +37,7 @@ const fieldBtnCls =
   "hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors " +
   "disabled:opacity-50 disabled:cursor-not-allowed";
 
-export default function FieldsPanel({ fields, onChange, draftId }: FieldsPanelProps) {
+export default function FieldsPanel({ fields, onChange, content, draftId }: FieldsPanelProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [tagInput, setTagInput] = useState("");
   const [ogDialog, setOgDialog] = useState<null | "pick" | "generate">(null);
@@ -220,6 +222,9 @@ export default function FieldsPanel({ fields, onChange, draftId }: FieldsPanelPr
               </button>
             </div>
           </div>
+
+          {/* 翻譯 */}
+          <TranslationButtons fields={fields} content={content} draftId={draftId} />
         </div>
       )}
 

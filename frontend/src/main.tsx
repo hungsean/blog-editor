@@ -10,7 +10,7 @@ function App() {
     <Switch>
       <Route path="/" component={ListPage} />
       <Route path="/editor/:id">
-        {(params) => <EditorPage id={params.id} />}
+        {(params) => <EditorPage key={params.id} id={params.id} />}
       </Route>
       <Route path="/editor">
         {() => <EditorPage />}

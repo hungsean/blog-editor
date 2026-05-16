@@ -38,7 +38,7 @@ data/*.db
 data/*.db-shm
 data/*.db-wal
 
-data/fonts
+fonts
 data/og-temp
 
 # build artifacts

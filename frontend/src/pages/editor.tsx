@@ -235,7 +235,7 @@ export default function EditorPage({ id }: EditorPageProps) {
       )}
 
       {/* Fields panel */}
-      <FieldsPanel fields={fields} onChange={handleFieldsChange} />
+      <FieldsPanel fields={fields} onChange={handleFieldsChange} draftId={draftId} />
 
       {/* Editor + Preview */}
       <div className="flex flex-1 overflow-hidden">

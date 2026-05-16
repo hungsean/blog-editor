@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { ChevronDown } from "lucide-react";
 import DatePicker from "./DatePicker";
+import OgImageDialog from "./OgImageDialog";
 
 export interface FieldValues {
   title: string;
@@ -16,6 +17,8 @@ export interface FieldValues {
 interface FieldsPanelProps {
   fields: FieldValues;
   onChange: (fields: FieldValues) => void;
+  /** 生成 OG 圖時用來組 R2 鍵值 `og/{draftId}.png`。 */
+  draftId: string | null;
 }
 
 const LANG_OPTIONS = ["zh-tw", "en", "ja"];
@@ -26,9 +29,16 @@ const inputCls =
   "placeholder:text-gray-400 dark:placeholder:text-gray-500 " +
   "focus:outline-none focus:ring-2 focus:ring-blue-500/50 dark:focus:ring-blue-400/40 transition-colors";
 
-export default function FieldsPanel({ fields, onChange }: FieldsPanelProps) {
+const fieldBtnCls =
+  "px-3 py-2 text-sm rounded-md border border-gray-200 dark:border-gray-700 whitespace-nowrap " +
+  "bg-white dark:bg-gray-900 text-gray-700 dark:text-gray-300 " +
+  "hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors " +
+  "disabled:opacity-50 disabled:cursor-not-allowed";
+
+export default function FieldsPanel({ fields, onChange, draftId }: FieldsPanelProps) {
   const [collapsed, setCollapsed] = useState(false);
   const [tagInput, setTagInput] = useState("");
+  const [ogDialog, setOgDialog] = useState<null | "pick" | "generate">(null);
 
   function set<K extends keyof FieldValues>(key: K, value: FieldValues[K]) {
     onChange({ ...fields, [key]: value });
@@ -183,17 +193,52 @@ export default function FieldsPanel({ fields, onChange }: FieldsPanelProps) {
           {/* ogImage */}
           <div className="col-span-2 flex flex-col gap-1">
             <label htmlFor="field-ogimage" className="text-xs font-medium text-gray-500 dark:text-gray-400">OG Image URL</label>
-            <input
-              id="field-ogimage"
-              className={inputCls}
-              type="url"
-              value={fields.ogImage}
-              onChange={(e) => set("ogImage", e.target.value)}
-              placeholder="https://example.com/cover.jpg"
-            />
+            <div className="flex gap-2">
+              <input
+                id="field-ogimage"
+                className={`${inputCls} flex-1 min-w-0`}
+                type="url"
+                value={fields.ogImage}
+                onChange={(e) => set("ogImage", e.target.value)}
+                placeholder="https://example.com/cover.jpg"
+              />
+              <button
+                type="button"
+                className={fieldBtnCls}
+                onClick={() => setOgDialog("pick")}
+              >
+                選擇圖片
+              </button>
+              <button
+                type="button"
+                className={fieldBtnCls}
+                onClick={() => setOgDialog("generate")}
+                disabled={!draftId || !fields.title.trim()}
+                title={!fields.title.trim() ? "請先填寫標題" : undefined}
+              >
+                生成 OG 圖
+              </button>
+            </div>
           </div>
         </div>
       )}
+
+      <OgImageDialog
+        open={ogDialog !== null}
+        onOpenChange={(o) => !o && setOgDialog(null)}
+        mode={ogDialog ?? "pick"}
+        draftId={draftId}
+        meta={{
+          title: fields.title,
+          description: fields.description,
+          date: fields.pubDate,
+          tags: fields.tags,
+        }}
+        onApply={(url) => {
+          set("ogImage", url);
+          setOgDialog(null);
+        }}
+      />
     </div>
   );
 }

@@ -4,6 +4,8 @@ import { fetchDraft, createDraft, updateDraft, publishDraft, type Draft } from "
 import FieldsPanel, { type FieldValues } from "../components/editor/FieldsPanel";
 import MarkdownEditor from "../components/editor/MarkdownEditor";
 import MarkdownPreview from "../components/editor/MarkdownPreview";
+import { useScrollSync } from "../components/editor/useScrollSync";
+import type { EditorView } from "@codemirror/view";
 import {
   Dialog,
   DialogContent,
@@ -72,8 +74,12 @@ export default function EditorPage({ id }: EditorPageProps) {
   const [publishing, setPublishing] = useState(false);
   const [prError, setPrError] = useState<string | null>(null);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [editorView, setEditorView] = useState<EditorView | null>(null);
+  const [previewEl, setPreviewEl] = useState<HTMLDivElement | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const draftIdRef = useRef<string | null>(id ?? null);
+
+  useScrollSync(editorView, previewEl);
 
   useEffect(() => {
     draftIdRef.current = draftId;
@@ -242,9 +248,11 @@ export default function EditorPage({ id }: EditorPageProps) {
         <MarkdownEditor
           value={content}
           onChange={handleContentChange}
+          onViewChange={setEditorView}
           className="flex-1 overflow-hidden border-r border-gray-200 dark:border-gray-800 [&_.cm-editor]:h-full"
         />
         <MarkdownPreview
+          ref={setPreviewEl}
           content={content}
           className="flex-1 overflow-auto bg-white dark:bg-gray-950"
         />

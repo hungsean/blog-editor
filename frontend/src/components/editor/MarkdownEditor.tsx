@@ -42,11 +42,20 @@ interface MarkdownEditorProps {
   value: string;
   onChange: (value: string) => void;
   className?: string;
+  /**
+   * CodeMirror `EditorView` 掛載或卸載時通知父層。
+   *
+   * @remarks
+   * 父層若只讀 ref `.current`，React 不會因 `.current` 變化重新執行 effect。
+   * 用 callback 把 view 存進父層 state，可讓依賴該 view 的 hook 在 editor
+   * 實際掛載後重新安裝監聽器。
+   */
+  onViewChange?: (view: EditorView | null) => void;
 }
 
-export default function MarkdownEditor({ value, onChange, className }: MarkdownEditorProps) {
+export default function MarkdownEditor({ value, onChange, className, onViewChange }: MarkdownEditorProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const viewRef = useRef<EditorView | null>(null);
+  const cmRef = useRef<EditorView | null>(null);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
   const [pickerOpen, setPickerOpen] = useState(false);
@@ -90,14 +99,19 @@ export default function MarkdownEditor({ value, onChange, className }: MarkdownE
       parent: containerRef.current,
     });
 
-    viewRef.current = view;
-    return () => view.destroy();
+    cmRef.current = view;
+    onViewChange?.(view);
+    return () => {
+      view.destroy();
+      cmRef.current = null;
+      onViewChange?.(null);
+    };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Sync external value changes without resetting cursor
   useEffect(() => {
-    const view = viewRef.current;
+    const view = cmRef.current;
     if (!view) return;
     const current = view.state.doc.toString();
     if (current !== value) {
@@ -115,7 +129,7 @@ export default function MarkdownEditor({ value, onChange, className }: MarkdownE
    * 有選取範圍時，選取的文字會被圖片語法取代。
    */
   function insertImage(url: string) {
-    const view = viewRef.current;
+    const view = cmRef.current;
     if (!view) return;
     const snippet = `![](${url})`;
     const { from, to } = view.state.selection.main;

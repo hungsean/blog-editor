@@ -1,8 +1,9 @@
-import React, { useMemo } from "react";
+import { forwardRef, useMemo } from "react";
 import { marked } from "marked";
 import { markedHighlight } from "marked-highlight";
 import hljs from "highlight.js";
 import "highlight.js/styles/github-dark.css";
+import { renderWithLineMarkers } from "./markdownLineMap";
 
 marked.use(
   markedHighlight({
@@ -19,14 +20,23 @@ interface MarkdownPreviewProps {
   className?: string;
 }
 
-export default function MarkdownPreview({ content, className }: MarkdownPreviewProps) {
-  const html = useMemo(() => marked(content) as string, [content]);
+/**
+ * Markdown 預覽面板。根 `div` 即為滾動容器，透過 `forwardRef` 對外暴露，
+ * 供 `useScrollSync` 讀取滾動位置與 `data-source-line` 標記做行對應同步。
+ */
+const MarkdownPreview = forwardRef<HTMLDivElement, MarkdownPreviewProps>(
+  function MarkdownPreview({ content, className }, ref) {
+    const html = useMemo(() => renderWithLineMarkers(content), [content]);
 
-  return (
-    <div
-      className={`prose prose-invert max-w-none overflow-auto p-6 ${className ?? ""}`}
-      // eslint-disable-next-line react/no-danger
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
-  );
-}
+    return (
+      <div
+        ref={ref}
+        className={`prose prose-invert max-w-none overflow-auto p-6 ${className ?? ""}`}
+        // eslint-disable-next-line react/no-danger
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    );
+  }
+);
+
+export default MarkdownPreview;

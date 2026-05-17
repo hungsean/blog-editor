@@ -82,9 +82,11 @@ export default function FieldsPanel({ fields, onChange, content, draftId }: Fiel
       </button>
 
       {!collapsed && (
-        <div className="px-6 pb-5 pt-1 grid grid-cols-2 gap-x-6 gap-y-4">
+        // mobile 維持兩欄；lg（>= 1024px）改用 12 格網格讓短欄位並排、長欄位跨欄，
+        // 避免 desktop 上欄位被拉到滿螢幕寬。md–lg 平板區間沿用兩欄以免欄位過窄。
+        <div className="px-6 pb-5 pt-1 grid grid-cols-2 lg:grid-cols-12 gap-x-6 gap-y-4">
           {/* Title */}
-          <div className="col-span-2 flex flex-col gap-1">
+          <div className="col-span-2 lg:col-span-6 flex flex-col gap-1">
             <label htmlFor="field-title" className="text-xs font-medium text-gray-500 dark:text-gray-400">Title</label>
             <input
               id="field-title"
@@ -97,7 +99,7 @@ export default function FieldsPanel({ fields, onChange, content, draftId }: Fiel
           </div>
 
           {/* Slug */}
-          <div className="flex flex-col gap-1">
+          <div className="lg:col-span-3 flex flex-col gap-1">
             <label htmlFor="field-slug" className="text-xs font-medium text-gray-500 dark:text-gray-400">Slug</label>
             <input
               id="field-slug"
@@ -110,7 +112,7 @@ export default function FieldsPanel({ fields, onChange, content, draftId }: Fiel
           </div>
 
           {/* Lang */}
-          <div className="flex flex-col gap-1">
+          <div className="lg:col-span-3 flex flex-col gap-1">
             <label htmlFor="field-lang" className="text-xs font-medium text-gray-500 dark:text-gray-400">Language</label>
             <select
               id="field-lang"
@@ -125,7 +127,7 @@ export default function FieldsPanel({ fields, onChange, content, draftId }: Fiel
           </div>
 
           {/* Description */}
-          <div className="col-span-2 flex flex-col gap-1">
+          <div className="col-span-2 lg:col-span-6 flex flex-col gap-1">
             <label htmlFor="field-description" className="text-xs font-medium text-gray-500 dark:text-gray-400">Description</label>
             <textarea
               id="field-description"
@@ -138,7 +140,7 @@ export default function FieldsPanel({ fields, onChange, content, draftId }: Fiel
           </div>
 
           {/* Tags */}
-          <div className="col-span-2 flex flex-col gap-1">
+          <div className="col-span-2 lg:col-span-6 flex flex-col gap-1">
             <label htmlFor="field-tags" className="text-xs font-medium text-gray-500 dark:text-gray-400">Tags</label>
             <div className={`${inputCls} flex flex-wrap gap-1.5 min-h-9 h-auto py-1.5`}>
               {fields.tags.map((tag) => (
@@ -172,13 +174,13 @@ export default function FieldsPanel({ fields, onChange, content, draftId }: Fiel
           </div>
 
           {/* pubDate */}
-          <div className="flex flex-col gap-1">
+          <div className="lg:col-span-3 flex flex-col gap-1">
             <label htmlFor="field-pubdate" className="text-xs font-medium text-gray-500 dark:text-gray-400">Publish Date</label>
             <DatePicker id="field-pubdate" value={fields.pubDate} onChange={(v) => set("pubDate", v)} />
           </div>
 
           {/* nsfw */}
-          <div className="flex flex-col gap-1 justify-center">
+          <div className="lg:col-span-3 flex flex-col gap-1 justify-center">
             <span className="text-xs font-medium text-gray-500 dark:text-gray-400">NSFW</span>
             <label htmlFor="field-nsfw" className="flex items-center gap-2 cursor-pointer">
               <input
@@ -193,7 +195,7 @@ export default function FieldsPanel({ fields, onChange, content, draftId }: Fiel
           </div>
 
           {/* ogImage */}
-          <div className="col-span-2 flex flex-col gap-1">
+          <div className="col-span-2 lg:col-span-6 flex flex-col gap-1">
             <label htmlFor="field-ogimage" className="text-xs font-medium text-gray-500 dark:text-gray-400">OG Image URL</label>
             <div className="flex gap-2">
               <input

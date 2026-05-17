@@ -76,7 +76,7 @@ export default function TranslationButtons({ fields, content, draftId }: Transla
   }
 
   return (
-    <div className="col-span-2 flex flex-col gap-1">
+    <div className="col-span-2 lg:col-span-12 flex flex-col gap-1">
       <span className="text-xs font-medium text-gray-500 dark:text-gray-400">翻譯</span>
       <div className="flex flex-wrap gap-2">
         {otherLangs.map((lang) => {

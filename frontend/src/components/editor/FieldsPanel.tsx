@@ -3,6 +3,7 @@ import { ChevronDown } from "lucide-react";
 import DatePicker from "./DatePicker";
 import OgImageDialog from "./OgImageDialog";
 import TranslationButtons from "./TranslationButtons";
+import { useSlugCheck } from "./useSlugCheck";
 import { LANG_OPTIONS } from "../../lib/langs";
 
 export interface FieldValues {
@@ -41,6 +42,7 @@ export default function FieldsPanel({ fields, onChange, content, draftId }: Fiel
   const [collapsed, setCollapsed] = useState(false);
   const [tagInput, setTagInput] = useState("");
   const [ogDialog, setOgDialog] = useState<null | "pick" | "generate">(null);
+  const slugCheck = useSlugCheck(fields.slug, fields.lang, draftId);
 
   function set<K extends keyof FieldValues>(key: K, value: FieldValues[K]) {
     onChange({ ...fields, [key]: value });
@@ -103,12 +105,25 @@ export default function FieldsPanel({ fields, onChange, content, draftId }: Fiel
             <label htmlFor="field-slug" className="text-xs font-medium text-gray-500 dark:text-gray-400">Slug</label>
             <input
               id="field-slug"
-              className={inputCls}
+              className={`${inputCls}${slugCheck.status === "conflict" ? " !border-red-400 dark:!border-red-500" : ""}`}
               type="text"
               value={fields.slug}
               onChange={(e) => set("slug", e.target.value)}
               placeholder="url-slug"
+              aria-invalid={slugCheck.status === "conflict"}
             />
+            {slugCheck.status === "checking" && (
+              <span className="text-xs text-gray-400">檢查 slug 是否重複...</span>
+            )}
+            {slugCheck.status === "conflict" && (
+              <span className="text-xs text-red-500 dark:text-red-400">
+                已有 {fields.lang} 草稿使用此 slug：
+                {slugCheck.matches.map((m) => m.title.trim() || "(未命名)").join("、")}
+              </span>
+            )}
+            {slugCheck.status === "error" && (
+              <span className="text-xs text-yellow-500 dark:text-yellow-400">slug 檢查失敗，請稍後再試</span>
+            )}
           </div>
 
           {/* Lang */}

@@ -18,6 +18,29 @@ import {
 
 type SaveStatus = "saved" | "saving" | "unsaved" | "error";
 
+/** 編輯器版面模式：雙欄、僅編輯、僅預覽。 */
+type EditorMode = "both" | "editor" | "preview";
+
+const MODE_OPTIONS: { value: EditorMode; label: string }[] = [
+  { value: "editor", label: "編輯" },
+  { value: "both", label: "雙欄" },
+  { value: "preview", label: "預覽" },
+];
+
+/**
+ * 取得初始版面模式：桌機（>= 768px）預設雙欄，行動裝置預設僅編輯。
+ *
+ * @remarks
+ * 只在元件初次掛載時讀一次，之後由使用者手動切換；不隨視窗縮放自動改變，
+ * 避免覆蓋使用者的選擇。768px 對應 Tailwind 的 `md` 斷點。
+ */
+function getDefaultMode(): EditorMode {
+  if (typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches) {
+    return "editor";
+  }
+  return "both";
+}
+
 interface EditorPageProps {
   id?: string;
 }
@@ -76,6 +99,7 @@ export default function EditorPage({ id }: EditorPageProps) {
   const [confirmOpen, setConfirmOpen] = useState(false);
   const [editorView, setEditorView] = useState<EditorView | null>(null);
   const [previewEl, setPreviewEl] = useState<HTMLDivElement | null>(null);
+  const [mode, setMode] = useState<EditorMode>(getDefaultMode);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const draftIdRef = useRef<string | null>(id ?? null);
 
@@ -243,19 +267,44 @@ export default function EditorPage({ id }: EditorPageProps) {
       {/* Fields panel */}
       <FieldsPanel fields={fields} onChange={handleFieldsChange} content={content} draftId={draftId} />
 
+      {/* Mode toggle */}
+      <div className="flex justify-end px-6 py-2 bg-white dark:bg-gray-950 border-b border-gray-200 dark:border-gray-800 shrink-0">
+        <div className="flex items-center gap-0.5 rounded-md bg-gray-100 dark:bg-gray-800 p-0.5">
+          {MODE_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => setMode(opt.value)}
+              className={`px-2.5 py-1 text-xs font-medium rounded transition-colors ${
+                mode === opt.value
+                  ? "bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100 shadow-sm"
+                  : "text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100"
+              }`}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
       {/* Editor + Preview */}
       <div className="flex flex-1 overflow-hidden">
-        <MarkdownEditor
-          value={content}
-          onChange={handleContentChange}
-          onViewChange={setEditorView}
-          className="flex-1 overflow-hidden border-r border-gray-200 dark:border-gray-800 [&_.cm-editor]:h-full"
-        />
-        <MarkdownPreview
-          ref={setPreviewEl}
-          content={content}
-          className="flex-1 overflow-auto bg-white dark:bg-gray-950"
-        />
+        {mode !== "preview" && (
+          <MarkdownEditor
+            value={content}
+            onChange={handleContentChange}
+            onViewChange={setEditorView}
+            className={`flex-1 overflow-hidden [&_.cm-editor]:h-full ${
+              mode === "both" ? "border-r border-gray-200 dark:border-gray-800" : ""
+            }`}
+          />
+        )}
+        {mode !== "editor" && (
+          <MarkdownPreview
+            ref={setPreviewEl}
+            content={content}
+            className="flex-1 overflow-auto bg-white dark:bg-gray-950"
+          />
+        )}
       </div>
     </div>
   );

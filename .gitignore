@@ -34,15 +34,11 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 .DS_Store
 
 # SQLite data
-data/*.db
-data/*.db-shm
-data/*.db-wal
+*.db
+*.db-shm
+*.db-wal
 
-data/fonts
+fonts
 data/og-temp
 
-# build artifacts
-public/js/editor.bundle.js
-
-# server-specific docker compose overrides
-docker-compose.override.yml
+.vscode

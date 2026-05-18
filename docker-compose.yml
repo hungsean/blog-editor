@@ -1,13 +1,31 @@
 services:
-  blog-editor:
-    build: .
+  backend:
+    build: ./backend
     restart: unless-stopped
-    ports:
-      - "3000:3000"
-    volumes:
-      - blog-editor-data:/data
     env_file:
-      - .env
+      - backend/.env
+    environment:
+      NODE_ENV: production
+      # keep the SQLite DB inside the persisted volume regardless of .env
+      DB_PATH: /app/data/blog-editor.db
+    volumes:
+      - blog-editor-data:/app/data
+    expose:
+      - "3000"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # empty -> frontend uses relative /api, proxied by nginx to backend
+        VITE_API_URL: ""
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      # 只綁 loopback：對外存取一律走 Cloudflare Access（cloudflared 在同主機連
+      # 127.0.0.1:3000）。避免同網段使用者用主機 IP 直連而繞過 Access 驗證。
+      - "127.0.0.1:3000:80"
 
 volumes:
   blog-editor-data:

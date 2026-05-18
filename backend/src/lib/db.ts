@@ -7,17 +7,20 @@
  * 啟動時自動建立 DB → 建立 drafts 表格 → 執行欄位 migration → 建立 translation_presets 表格
  *
  * ### 已知限制
- * - 使用 top-level await（`Bun.write`），此模組只能在 Bun 環境中使用
+ * - 使用 top-level await 建立資料目錄，此模組只能在 Bun 環境中使用
  * - Migration 策略為 ALTER TABLE ADD COLUMN，僅支援新增欄位，不支援刪除或改型別
- * - DB 路徑預設為 `data/blog-editor.db`，可透過 `DB_PATH` 環境變數覆蓋
+ * - DB 路徑預設為 `data/blog-editor.db`，可透過 `DB_PATH` 環境變數覆蓋；啟動時會以實際
+ *   `DB_PATH` 建立父目錄，避免 Docker production 路徑與本機預設路徑不一致
  */
 import { Database } from "bun:sqlite";
-import { join } from "path";
+import { mkdir } from "fs/promises";
+import { dirname, join } from "path";
 
 const DB_PATH = process.env.DB_PATH ?? join(import.meta.dir, "../../data/blog-editor.db");
+const dataDir = dirname(DB_PATH);
 
-// Ensure data directory exists
-const dataDir = join(import.meta.dir, "../../data");
+// Ensure the directory used by the configured DB path exists.
+await mkdir(dataDir, { recursive: true });
 await Bun.write(join(dataDir, ".gitkeep"), "").catch(() => {});
 
 export const db = new Database(DB_PATH, { create: true });

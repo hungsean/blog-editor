@@ -1,0 +1,29 @@
+services:
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    env_file:
+      - backend/.env
+    environment:
+      NODE_ENV: production
+      # keep the SQLite DB inside the persisted volume regardless of .env
+      DB_PATH: /app/data/blog-editor.db
+    volumes:
+      - blog-editor-data:/app/data
+    expose:
+      - "3000"
+
+  frontend:
+    build:
+      context: ./frontend
+      args:
+        # empty -> frontend uses relative /api, proxied by nginx to backend
+        VITE_API_URL: ""
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "3000:80"
+
+volumes:
+  blog-editor-data:

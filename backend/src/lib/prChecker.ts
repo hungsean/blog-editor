@@ -9,9 +9,13 @@
  * `github_sha` 直接使用 PR Files API 回傳的 blob SHA，不再呼叫 Contents API。
  * draft 同步使用 Contents API 取得 SHA；404 視為檔案不存在，靜默略過。
  * 輪詢間隔預設 60 秒，可透過 PR_CHECK_INTERVAL_MS 環境變數調整。
+ *
+ * PR 合併後，靠 publish 時保存的 `github_path` 對應 PR 內的 .md 檔案。
+ * 批次 PR 一個 `pr_url` 對應多篇 draft，若只抓第一個 .md 會讓每篇 draft 都被
+ * 標成同一個檔案，污染 DB。沒有 `github_path` 的舊資料才退回抓第一個 .md。
  */
 import { db } from "./db";
-import { getPR, getPRFiles, getFileSha, GITHUB_DEFAULT_BRANCH } from "./github";
+import { getPR, getPRFiles, getFileSha, GITHUB_DEFAULT_BRANCH, type PRFile } from "./github";
 
 const INTERVAL_MS = Number(process.env.PR_CHECK_INTERVAL_MS ?? 60_000);
 const DEV = process.env.NODE_ENV !== "production";
@@ -21,7 +25,17 @@ type PrOpenedDraft = {
   id: string;
   title: string;
   pr_url: string;
+  github_path: string;
 };
+
+/** PR 內屬於部落格文章、且非刪除狀態的 .md 檔案。 */
+function isBlogMd(f: PRFile): boolean {
+  return (
+    f.status !== "removed" &&
+    f.filename.startsWith("src/content/blog/") &&
+    f.filename.endsWith(".md")
+  );
+}
 
 type LocalDraft = {
   id: string;
@@ -39,7 +53,7 @@ function extractPrNumber(prUrl: string): number | null {
 async function checkOnce() {
   devLog(`[prChecker] 開始檢查 pr_opened 文章...`);
   const drafts = db
-    .query("SELECT id, title, pr_url FROM drafts WHERE status = 'pr_opened' AND pr_url != ''")
+    .query("SELECT id, title, pr_url, github_path FROM drafts WHERE status = 'pr_opened' AND pr_url != ''")
     .all() as PrOpenedDraft[];
 
   if (drafts.length === 0) {
@@ -82,15 +96,15 @@ async function checkOnce() {
       }
 
       const files = await getPRFiles(prNumber);
-      const mdFile = files.find(
-        (f) =>
-          f.status !== "removed" &&
-          f.filename.startsWith("src/content/blog/") &&
-          f.filename.endsWith(".md")
-      );
+      // 用 publish 時保存的 github_path 精準對應；舊資料無 github_path 才退回第一個 .md。
+      const mdFile = draft.github_path
+        ? files.find((f) => isBlogMd(f) && f.filename === draft.github_path)
+        : files.find(isBlogMd);
 
       if (!mdFile) {
-        console.warn(`[prChecker] PR #${prNumber} 找不到 .md 檔案，跳過`);
+        console.warn(
+          `[prChecker] PR #${prNumber} 找不到對應 "${draft.title}" 的 .md 檔案 (${draft.github_path || "first blog .md"})，跳過`
+        );
         continue;
       }
 

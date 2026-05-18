@@ -51,7 +51,7 @@ export async function updateDraft(id: string, body: Partial<Draft>): Promise<Dra
 
 export type PublishResult =
   | { success: true; pr_url: string }
-  | { success: false; reason: "required" | "conflict"; error: string; conflict?: unknown };
+  | { success: false; reason: "required" | "conflict" | "invalid"; error: string; conflict?: unknown };
 
 export async function deleteDraft(id: string): Promise<void> {
   const res = await fetch(`${BASE}/api/drafts/${id}`, { method: "DELETE" });

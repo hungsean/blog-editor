@@ -23,7 +23,9 @@ services:
     depends_on:
       - backend
     ports:
-      - "3000:80"
+      # 只綁 loopback：對外存取一律走 Cloudflare Access（cloudflared 在同主機連
+      # 127.0.0.1:3000）。避免同網段使用者用主機 IP 直連而繞過 Access 驗證。
+      - "127.0.0.1:3000:80"
 
 volumes:
   blog-editor-data:

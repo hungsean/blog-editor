@@ -6,11 +6,15 @@
  * ### 資料流
  * 原始 .md 字串 → `parseFrontmatter` → `{ frontmatter, body }` → `frontmatterToDraft` → DB 欄位
  *
- * ### 已知限制
- * - YAML 解析為自製簡易版，僅支援 string/boolean/inline array，不支援巢狀結構或多行值
- * - 對 YAML 中的多行字串（`|` / `>`）不會正確處理，會被當成普通字串
+ * ### 設計決策
+ * - 解析與序列化都用 `yaml` library：序列化在 `routes/drafts.ts` 的 `buildFrontmatter`，
+ *   解析在此處的 `parseFrontmatter`。兩端共用同一套 YAML 語意，publish 出去的多行字串
+ *   （`|-` 區塊）與 quote/escape 才能在 sync/resync 時正確讀回，不會只改輸出端就讀壞。
  */
-export type FrontmatterData = Record<string, string | boolean | string[]>;
+import { parse as parseYaml } from "yaml";
+
+/** 解析後的 frontmatter；值的型別由 YAML 內容決定（string/boolean/number/array/物件）。 */
+export type FrontmatterData = Record<string, unknown>;
 
 const VALID_LANGS = new Set(["zh-tw", "en", "ja"]);
 
@@ -44,8 +48,9 @@ export interface ParsedPost {
  * @returns `{ frontmatter, body }`；若無 frontmatter 則 frontmatter 為空物件，body 為原始字串
  *
  * @remarks
- * 支援的 YAML 型別：string、boolean、inline array（`["a","b"]` 或 `[a, b]`）。
- * 不支援巢狀 YAML、多行值（`|` / `>`）、或 YAML anchors。
+ * frontmatter 區塊用 `yaml` library 解析，支援多行字串（`|` / `>`）、巢狀結構等完整
+ * YAML 語意。YAML 不合法時 `yaml.parse` 會拋出例外，刻意不在此捕捉 —— 由呼叫端
+ * （resync / sync route）回報錯誤，而非靜默吞掉導致 title 等欄位被清空。
  */
 export function parseFrontmatter(raw: string): ParsedPost {
   const match = raw.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
@@ -53,37 +58,14 @@ export function parseFrontmatter(raw: string): ParsedPost {
 
   const yamlBlock = match[1] ?? "";
   const body = match[2] ?? "";
-  const frontmatter: FrontmatterData = {};
-
-  for (const line of yamlBlock.split("\n")) {
-    const colonIdx = line.indexOf(":");
-    if (colonIdx === -1) continue;
-
-    const key = line.slice(0, colonIdx).trim();
-    const raw_value = line.slice(colonIdx + 1).trim();
-    if (!key) continue;
-
-    frontmatter[key] = parseYamlValue(raw_value);
-  }
+  const parsed = parseYaml(yamlBlock) as unknown;
+  // 空 frontmatter（parseYaml 回傳 null）或頂層非 mapping 一律視為空物件。
+  const frontmatter: FrontmatterData =
+    parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
+      ? (parsed as FrontmatterData)
+      : {};
 
   return { frontmatter, body: body.trimStart() };
-}
-
-function parseYamlValue(val: string): string | boolean | string[] {
-  if (val === "true") return true;
-  if (val === "false") return false;
-
-  // Inline array: ["a", "b"] or [a, b]
-  if (val.startsWith("[") && val.endsWith("]")) {
-    const inner = val.slice(1, -1).trim();
-    if (!inner) return [];
-    return inner.split(",").map((s) =>
-      s.trim().replace(/^["']|["']$/g, "")
-    );
-  }
-
-  // Strip surrounding quotes
-  return val.replace(/^["']|["']$/g, "");
 }
 
 /**

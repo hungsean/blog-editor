@@ -101,6 +101,8 @@ export default function EditorPage({ id }: EditorPageProps) {
   const [previewEl, setPreviewEl] = useState<HTMLDivElement | null>(null);
   const [mode, setMode] = useState<EditorMode>(getDefaultMode);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** 尚未送出的 debounce 儲存內容；save 執行後清空，供 unmount 時 flush。 */
+  const pendingSaveRef = useRef<{ fields: FieldValues; content: string } | null>(null);
   const draftIdRef = useRef<string | null>(id ?? null);
 
   useScrollSync(editorView, previewEl);
@@ -130,26 +132,53 @@ export default function EditorPage({ id }: EditorPageProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const save = useCallback(
+  /**
+   * 純 API 儲存：只送出 PATCH，不碰任何 UI state。
+   *
+   * @remarks
+   * 與 `save` 分離，是為了讓 unmount cleanup 能安全 flush —— cleanup 在元件卸載後
+   * 才呼叫，若此處有 `setState` 會觸發 React 的 unmounted setState 警告。
+   */
+  const saveToApi = useCallback(
     async (latestFields: FieldValues, latestContent: string) => {
       const currentId = draftIdRef.current;
       if (!currentId) return;
+      pendingSaveRef.current = null;
+      await updateDraft(currentId, fieldsToDraftBody(latestFields, latestContent));
+    },
+    []
+  );
+
+  const save = useCallback(
+    async (latestFields: FieldValues, latestContent: string) => {
+      if (!draftIdRef.current) return;
       setSaveStatus("saving");
       try {
-        await updateDraft(currentId, fieldsToDraftBody(latestFields, latestContent));
+        await saveToApi(latestFields, latestContent);
         setSaveStatus("saved");
       } catch {
         setSaveStatus("error");
       }
     },
-    []
+    [saveToApi]
   );
 
   function scheduleSave(nextFields: FieldValues, nextContent: string) {
     setSaveStatus("unsaved");
+    pendingSaveRef.current = { fields: nextFields, content: nextContent };
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => save(nextFields, nextContent), 1200);
   }
+
+  // 離開編輯器前：取消待送的 debounce 計時器，並 flush 尚未儲存的內容。
+  // 用 saveToApi（不 setState）而非 save，避免卸載後更新 UI state 的警告。
+  useEffect(() => {
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+      const pending = pendingSaveRef.current;
+      if (pending) saveToApi(pending.fields, pending.content).catch(() => {});
+    };
+  }, [saveToApi]);
 
   function handleFieldsChange(next: FieldValues) {
     setFields(next);

@@ -87,6 +87,7 @@ export default function ListPage() {
                     <PostList
                         posts={posts}
                         onDelete={(id) => setPosts((prev) => prev.filter((p) => p.id !== id))}
+                        onSynced={loadDrafts}
                         selectMode={selectMode}
                         selectedIds={selectedIds}
                         onToggleSelect={toggleSelect}

@@ -1,14 +1,25 @@
 import { Hono } from "hono";
 import { nanoid } from "nanoid";
+import { Document, visit } from "yaml";
 import { db } from "../lib/db";
 import { getGithubFile, openPR, openBatchPR } from "../lib/github";
 import { parseFrontmatter, frontmatterToDraft } from "../lib/frontmatter";
-import { slugify } from "../lib/slugify";
+import { slugify, isValidSlug, SLUG_PATTERN } from "../lib/slugify";
 import type { Draft } from "../types";
 
 const drafts = new Hono();
 
-/** Serialize a draft's frontmatter fields into a YAML-like string. */
+/**
+ * 將 draft 的 frontmatter 欄位序列化為 YAML 字串。
+ *
+ * @returns `{ frontmatter, date, slug }` — frontmatter 為含結尾換行的 YAML 區塊
+ *
+ * @remarks
+ * 使用 `yaml` library 序列化，由它負責 quote/escape：標題或描述含 `:`、`#`、引號、
+ * 換行等 YAML 特殊字元時都能產出合法輸出，不會壞掉 frontmatter。
+ * 陣列強制以 flow 樣式（`[a, b]`）輸出，讓產出的 frontmatter 更接近既有格式；
+ * `parseFrontmatter` 同樣使用 `yaml` library，因此 flow / block array 都能讀回。
+ */
 function buildFrontmatter(draft: Draft): { frontmatter: string; date: string; slug: string } {
   const fields = JSON.parse(draft.fields || "{}");
   const tags = JSON.parse(draft.tags || "[]");
@@ -20,18 +31,45 @@ function buildFrontmatter(draft: Draft): { frontmatter: string; date: string; sl
   const { lang: _lang, ...fieldsWithoutLang } = fields;
   const fm: Record<string, unknown> = { title: draft.title, pubDate: date };
   if (draft.description) fm.description = draft.description;
-  if (tags.length > 0) fm.tags = tags;
+  if (Array.isArray(tags) && tags.length > 0) fm.tags = tags;
   Object.assign(fm, fieldsWithoutLang);
 
-  const frontmatter = Object.entries(fm)
-    .map(([k, v]) => {
-      if (Array.isArray(v)) return `${k}: [${(v as unknown[]).map((x) => `"${x}"`).join(", ")}]`;
-      if (typeof v === "boolean") return `${k}: ${v}`;
-      return `${k}: ${String(v)}`;
-    })
-    .join("\n") + "\n";
+  const doc = new Document(fm);
+  visit(doc, { Seq: (_key, node) => { node.flow = true; } });
+  const frontmatter = doc.toString();
 
   return { frontmatter, date, slug };
+}
+
+/** pubDate 必須是 `YYYY-MM-DD` 格式。 */
+const PUB_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+
+/**
+ * 驗證 publish 用的 slug 與 pubDate。
+ *
+ * @returns 錯誤訊息字串；通過驗證則為 `null`
+ *
+ * @remarks
+ * slug 與 date 會直接組進 GitHub 檔案路徑與 branch 名稱，必須在後端強制白名單，
+ * 不能信任前端傳來的值。date 除了格式還會檢查是否為真實存在的日曆日期。
+ */
+function validatePublishFields(slug: string, date: string): string | null {
+  if (!isValidSlug(slug)) {
+    return `slug "${slug}" 格式不合法，必須符合 ${SLUG_PATTERN.source}`;
+  }
+  if (!PUB_DATE_PATTERN.test(date)) {
+    return `pubDate "${date}" 格式不合法，必須為 YYYY-MM-DD`;
+  }
+  const ts = Date.parse(`${date}T00:00:00Z`);
+  if (Number.isNaN(ts) || new Date(ts).toISOString().slice(0, 10) !== date) {
+    return `pubDate "${date}" 不是有效日期`;
+  }
+  return null;
+}
+
+/** 依 lang/slug 推算 publish 後文章在 GitHub 的檔案路徑。 */
+function expectedGithubPath(lang: string, slug: string): string {
+  return `src/content/blog/${lang}/${slug}.md`;
 }
 
 // GET /api/drafts
@@ -125,26 +163,46 @@ drafts.post("/drafts/publish", async (c) => {
     return c.json({ success: false, reason: "slug_conflicts", error: "Slug conflicts found", conflicts: allConflicts }, 400);
   }
 
-  const files = resolved.map(({ draft, slug }) => {
+  const built = resolved.map(({ draft, slug }) => {
     const { frontmatter, date } = buildFrontmatter(draft);
-    return {
-      title: draft.title,
-      slug,
-      lang: draft.lang,
-      date,
-      frontmatter,
-      content: draft.content,
-      githubPath: draft.github_path || undefined,
-      githubSha: draft.github_sha || undefined,
-    };
+    return { draft, slug, frontmatter, date };
   });
+
+  const invalidFields = built
+    .map(({ draft, slug, date }) => {
+      const error = validatePublishFields(slug, date);
+      return error ? { id: draft.id, title: draft.title, error } : null;
+    })
+    .filter((x): x is { id: string; title: string; error: string } => x !== null);
+  if (invalidFields.length > 0) {
+    return c.json({
+      success: false,
+      reason: "invalid_fields",
+      error: "Some drafts have an invalid slug or pubDate",
+      drafts: invalidFields,
+    }, 400);
+  }
+
+  const files = built.map(({ draft, slug, frontmatter, date }) => ({
+    title: draft.title,
+    slug,
+    lang: draft.lang,
+    date,
+    frontmatter,
+    content: draft.content,
+    githubPath: draft.github_path || undefined,
+    githubSha: draft.github_sha || undefined,
+  }));
 
   try {
     const { prUrl } = await openBatchPR(files);
     const now = new Date().toISOString();
-    for (const draft of draftList) {
-      db.query("UPDATE drafts SET status = 'pr_opened', pr_url = ?, updated_at = ? WHERE id = ?")
-        .run(prUrl, now, draft.id);
+    for (const { draft, slug } of built) {
+      // 保存每篇 draft 的 resolved slug 與 expected path：批次 PR 內含多篇 .md，
+      // prChecker 必須靠這個 path 精準對應，否則所有 draft 會被標成同一個檔案。
+      const githubPath = draft.github_path || expectedGithubPath(draft.lang, slug);
+      db.query("UPDATE drafts SET status = 'pr_opened', pr_url = ?, slug = ?, github_path = ?, updated_at = ? WHERE id = ?")
+        .run(prUrl, slug, githubPath, now, draft.id);
     }
     return c.json({ success: true, pr_url: prUrl, count: draftList.length });
   } catch (err) {
@@ -235,6 +293,11 @@ drafts.post("/drafts/:id/publish", async (c) => {
     return c.json({ success: false, reason: "required", error: "Slug is required" }, 400);
   }
 
+  const fieldError = validatePublishFields(slug, date);
+  if (fieldError) {
+    return c.json({ success: false, reason: "invalid", error: fieldError }, 400);
+  }
+
   const slugConflict = db.query(
     "SELECT id, title, lang, slug, status, github_path FROM drafts WHERE lang = ? AND TRIM(slug) = ? AND id != ? LIMIT 1"
   ).get(draft.lang, slug, id) as { id: string; title: string; lang: string; slug: string; status: string; github_path: string } | null;
@@ -243,7 +306,7 @@ drafts.post("/drafts/:id/publish", async (c) => {
   }
 
   try {
-    const { prUrl } = await openPR({
+    const { prUrl, filePath } = await openPR({
       title: draft.title,
       slug,
       lang: draft.lang,
@@ -254,8 +317,10 @@ drafts.post("/drafts/:id/publish", async (c) => {
       githubSha: draft.github_sha || undefined,
     });
 
-    db.query("UPDATE drafts SET status = 'pr_opened', pr_url = ?, updated_at = ? WHERE id = ?")
-      .run(prUrl, new Date().toISOString(), id);
+    // 寫回 resolved slug（可能來自 slugify fallback）與 expected path，
+    // 讓列表顯示正確 slug、prChecker 能精準對應 PR 檔案。
+    db.query("UPDATE drafts SET status = 'pr_opened', pr_url = ?, slug = ?, github_path = ?, updated_at = ? WHERE id = ?")
+      .run(prUrl, slug, filePath, new Date().toISOString(), id);
 
     return c.json({ success: true, pr_url: prUrl });
   } catch (err) {

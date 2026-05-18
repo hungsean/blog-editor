@@ -24,6 +24,8 @@ export interface Post {
 interface PostCardProps {
     post: Post;
     onDelete?: (id: string) => void;
+    /** 單篇 sync 成功後呼叫，讓列表重新載入以反映被覆蓋的內容。 */
+    onSynced?: () => void;
     selectMode?: boolean;
     selected?: boolean;
     onToggleSelect?: (id: string) => void;
@@ -35,7 +37,7 @@ const STATUS_STYLES: Record<Post["status"], string> = {
     pr_opened: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
 };
 
-export default function PostCard({ post, onDelete, selectMode = false, selected = false, onToggleSelect }: PostCardProps) {
+export default function PostCard({ post, onDelete, onSynced, selectMode = false, selected = false, onToggleSelect }: PostCardProps) {
     const [, navigate] = useLocation();
     const [confirmOpen, setConfirmOpen] = useState(false);
     const [deleting, setDeleting] = useState(false);
@@ -67,6 +69,7 @@ export default function PostCard({ post, onDelete, selectMode = false, selected 
         try {
             await syncFromGithub([post.github_path], true);
             setSyncConfirmOpen(false);
+            onSynced?.();
         } catch (err) {
             setSyncError(err instanceof Error ? err.message : "同步失敗，請再試一次");
         } finally {

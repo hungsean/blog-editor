@@ -94,10 +94,10 @@ export default function PostCard({ post, onDelete, onSynced, selectMode = false,
     return (
         <>
             <div
-                className={`flex items-stretch gap-4 px-6 py-4 bg-white dark:bg-gray-950 border-b border-gray-100 dark:border-gray-800 transition-colors ${
+                className={`flex items-stretch gap-3 sm:gap-4 px-6 py-4 bg-white dark:bg-gray-950 border-b border-gray-100 dark:border-gray-800 transition-colors ${
                     selectMode
                         ? "cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-950/30" + (selected ? " bg-blue-50 dark:bg-blue-950/30" : "")
-                        : "hover:bg-gray-50 dark:hover:bg-gray-900"
+                        : "flex-col sm:flex-row hover:bg-gray-50 dark:hover:bg-gray-900"
                 }`}
                 onClick={selectMode ? () => onToggleSelect?.(post.id) : undefined}
             >
@@ -124,17 +124,17 @@ export default function PostCard({ post, onDelete, onSynced, selectMode = false,
                         </span>
                     </div>
                     <div className="flex items-center gap-3 text-sm text-gray-400 dark:text-gray-500">
-                        <span>{post.slug}</span>
-                        <span>·</span>
-                        <span>{post.lang.toUpperCase()}</span>
-                        <span>·</span>
-                        <span>{post.updatedAt}</span>
+                        <span className="truncate">{post.slug}</span>
+                        <span className="shrink-0">·</span>
+                        <span className="shrink-0">{post.lang.toUpperCase()}</span>
+                        <span className="shrink-0">·</span>
+                        <span className="shrink-0">{post.updatedAt}</span>
                     </div>
                 </div>
 
                 {/* Button area */}
                 {!selectMode && (
-                    <div className="flex items-center gap-2 shrink-0">
+                    <div className="flex items-center justify-end gap-2 shrink-0">
                         {post.status === "published" && (
                             <button
                                 onClick={() => setSyncConfirmOpen(true)}

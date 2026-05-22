@@ -17,7 +17,7 @@ export interface Post {
     slug: string;
     lang: string;
     status: "published" | "draft" | "pr_opened";
-    updatedAt: string;
+    pubDate: string;
     github_path: string;
 }
 
@@ -128,7 +128,7 @@ export default function PostCard({ post, onDelete, onSynced, selectMode = false,
                         <span className="shrink-0">·</span>
                         <span className="shrink-0">{post.lang.toUpperCase()}</span>
                         <span className="shrink-0">·</span>
-                        <span className="shrink-0">{post.updatedAt}</span>
+                        <span className="shrink-0">{post.pubDate}</span>
                     </div>
                 </div>
 

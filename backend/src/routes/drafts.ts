@@ -75,7 +75,7 @@ function expectedGithubPath(lang: string, slug: string): string {
 // GET /api/drafts
 drafts.get("/drafts", (c) => {
   const rows = db
-    .query("SELECT id, title, lang, slug, status, pr_url, github_path, github_sha, created_at, updated_at FROM drafts ORDER BY DATE(json_extract(fields, '$.pubDate')) DESC, updated_at DESC")
+    .query("SELECT id, title, lang, slug, status, pr_url, github_path, github_sha, created_at, updated_at, fields FROM drafts ORDER BY DATE(json_extract(fields, '$.pubDate')) DESC, updated_at DESC")
     .all() as Draft[];
   return c.json(rows);
 });

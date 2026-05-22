@@ -5,6 +5,22 @@ import PostList from "../components/PostList";
 import type { Post } from "../components/PostCard";
 import { fetchDrafts, bulkDeleteDrafts, bulkPublishDrafts } from "../lib/api/drafts";
 
+/**
+ * 從 draft 的 `fields` JSON 字串取出 pubDate，取不到時回傳空字串。
+ *
+ * @remarks
+ * pubDate 與 nsfw、ogImage 一起存在 `fields` JSON 欄位裡（與後端 schema 一致），
+ * 解析方式刻意對齊編輯器的 draftToFields，避免兩邊各自一套。
+ */
+function parsePubDate(fields: string): string {
+    try {
+        const parsed = JSON.parse(fields || "{}");
+        return typeof parsed.pubDate === "string" ? parsed.pubDate : "";
+    } catch {
+        return "";
+    }
+}
+
 export default function ListPage() {
     const [posts, setPosts] = useState<Post[]>([]);
     const [loading, setLoading] = useState(true);
@@ -22,7 +38,7 @@ export default function ListPage() {
                     slug: d.slug,
                     lang: d.lang,
                     status: d.status === "published" ? "published" : d.status === "pr_opened" ? "pr_opened" : "draft",
-                    updatedAt: d.updated_at?.slice(0, 10) ?? "",
+                    pubDate: parsePubDate(d.fields),
                     github_path: d.github_path ?? "",
                 }));
                 setPosts(mapped);

@@ -75,12 +75,19 @@ function expectedGithubPath(lang: string, slug: string): string {
 // GET /api/drafts
 drafts.get("/drafts", (c) => {
   const rows = db
-    .query("SELECT id, title, lang, slug, status, pr_url, github_path, github_sha, created_at, updated_at FROM drafts ORDER BY DATE(json_extract(fields, '$.pubDate')) DESC, updated_at DESC")
+    .query("SELECT id, title, lang, slug, status, pr_url, github_path, github_sha, created_at, updated_at, fields FROM drafts ORDER BY DATE(json_extract(fields, '$.pubDate')) DESC, updated_at DESC")
     .all() as Draft[];
   return c.json(rows);
 });
 
-// POST /api/drafts
+/**
+ * POST /api/drafts —— 建立新草稿。
+ *
+ * @remarks
+ * 未帶 `fields` 時（前端 New Post 送的是空 body），預設塞入今天作為 `pubDate`，
+ * 讓新草稿一進編輯器就帶有預設發布日。日期取自此 handler 已算好的 `now`（UTC），
+ * 與前端 editor.tsx 的初始預設一致，避免兩邊時區行為分歧。
+ */
 drafts.post("/drafts", async (c) => {
   const now = new Date().toISOString();
   const id = nanoid();
@@ -96,7 +103,7 @@ drafts.post("/drafts", async (c) => {
     body.slug?.trim() ?? "",
     body.description ?? "",
     body.tags ?? "[]",
-    body.fields ?? "{}",
+    body.fields ?? JSON.stringify({ pubDate: now.slice(0, 10) }),
     body.content ?? "",
     now,
     now

@@ -147,7 +147,7 @@ export default function FieldsPanel({ fields, onChange, content, draftId }: Fiel
             <textarea
               id="field-description"
               className={`${inputCls} resize-none`}
-              rows={2}
+              rows={1}
               value={fields.description}
               onChange={(e) => set("description", e.target.value)}
               placeholder="文章摘要"

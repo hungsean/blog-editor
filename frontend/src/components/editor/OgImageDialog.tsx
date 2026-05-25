@@ -13,6 +13,7 @@ import { Button } from "../ui/button";
 import ImageLibrary from "./ImageLibrary";
 import type { ImageItem } from "../../lib/api/images";
 import { generateOgPreview, uploadOgImage } from "../../lib/api/og";
+import { useEditor } from "../../contexts/EditorContext";
 
 interface OgImageDialogProps {
   open: boolean;
@@ -22,15 +23,27 @@ interface OgImageDialogProps {
    * `generate` — 兩步驟：選 hero 圖 → 套模板生成 OG 卡片 → 上傳 R2。
    */
   mode: "pick" | "generate";
-  /** 生成模式上傳 R2 時用來組鍵值 `og/{draftId}.png`。 */
-  draftId: string | null;
-  /** 生成 OG 卡片所需的文章資料。 */
-  meta: { title: string; description: string; date: string; tags: string[] };
-  /** 完成時呼叫，參數為最終要寫入 ogImage 的 URL。 */
-  onApply: (url: string) => void;
 }
 
 type GenStatus = "idle" | "loading" | "ready" | "error";
+
+/** 對話框的三種畫面：生成預覽、生成選圖、單純選圖。 */
+type OgStage = "preview" | "generate" | "pick";
+
+const STAGE_COPY: Record<OgStage, { title: string; description: string }> = {
+  preview: {
+    title: "生成 OG 圖 — 預覽",
+    description: "確認生成結果，沒問題就上傳到 R2 並套用。",
+  },
+  generate: {
+    title: "生成 OG 圖 — 選擇圖片",
+    description: "選一張 hero 圖片，下一步會套模板生成 OG 卡片。",
+  },
+  pick: {
+    title: "選擇 OG 圖片",
+    description: "從圖片庫挑一張圖片作為 OG Image。",
+  },
+};
 
 /**
  * OG 圖片挑選／生成對話框。
@@ -44,10 +57,15 @@ export default function OgImageDialog({
   open,
   onOpenChange,
   mode,
-  draftId,
-  meta,
-  onApply,
-}: OgImageDialogProps) {
+}: Readonly<OgImageDialogProps>) {
+  const { draftId, fields, updateFields } = useEditor();
+  // 生成 OG 卡片所需的文章資料，從共享 fields 就地組出。
+  const meta = {
+    title: fields.title,
+    description: fields.description,
+    date: fields.pubDate,
+    tags: fields.tags,
+  };
   const [selected, setSelected] = useState<ImageItem | null>(null);
   const [step, setStep] = useState<1 | 2>(1);
   const [genStatus, setGenStatus] = useState<GenStatus>("idle");
@@ -105,10 +123,14 @@ export default function OgImageDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode, step, selected]);
 
+  function applyOgImage(url: string) {
+    updateFields({ ...fields, ogImage: url });
+    onOpenChange(false);
+  }
+
   function handleConfirmPick() {
     if (!selected) return;
-    onApply(selected.url);
-    onOpenChange(false);
+    applyOgImage(selected.url);
   }
 
   async function handleConfirmGenerate() {
@@ -117,8 +139,7 @@ export default function OgImageDialog({
     setError(null);
     try {
       const { url } = await uploadOgImage(draftId, previewBlob);
-      onApply(url);
-      onOpenChange(false);
+      applyOgImage(url);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -127,16 +148,8 @@ export default function OgImageDialog({
   }
 
   const onStep2 = mode === "generate" && step === 2;
-  const title = onStep2
-    ? "生成 OG 圖 — 預覽"
-    : mode === "generate"
-      ? "生成 OG 圖 — 選擇圖片"
-      : "選擇 OG 圖片";
-  const description = onStep2
-    ? "確認生成結果，沒問題就上傳到 R2 並套用。"
-    : mode === "generate"
-      ? "選一張 hero 圖片，下一步會套模板生成 OG 卡片。"
-      : "從圖片庫挑一張圖片作為 OG Image。";
+  const stage: OgStage = onStep2 ? "preview" : mode;
+  const { title, description } = STAGE_COPY[stage];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>

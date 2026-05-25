@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { fetchDraft, createDraft, updateDraft, publishDraft, type Draft } from "../lib/api/drafts";
 import FieldsPanel, { type FieldValues } from "../components/editor/FieldsPanel";
+import { EditorProvider } from "../contexts/EditorContext";
 import MarkdownEditor from "../components/editor/MarkdownEditor";
 import MarkdownPreview from "../components/editor/MarkdownPreview";
 import { useScrollSync } from "../components/editor/useScrollSync";
@@ -35,7 +36,7 @@ const MODE_OPTIONS: { value: EditorMode; label: string }[] = [
  * 避免覆蓋使用者的選擇。768px 對應 Tailwind 的 `md` 斷點。
  */
 function getDefaultMode(): EditorMode {
-  if (typeof window !== "undefined" && window.matchMedia("(max-width: 767px)").matches) {
+  if (globalThis.window !== undefined && globalThis.matchMedia("(max-width: 767px)").matches) {
     return "editor";
   }
   return "both";
@@ -78,7 +79,7 @@ function fieldsToDraftBody(fields: FieldValues, content: string): Partial<Draft>
   };
 }
 
-export default function EditorPage({ id }: EditorPageProps) {
+export default function EditorPage({ id }: Readonly<EditorPageProps>) {
   const [, navigate] = useLocation();
   const [draftId, setDraftId] = useState<string | null>(id ?? null);
   const [fields, setFields] = useState<FieldValues>({
@@ -180,10 +181,12 @@ export default function EditorPage({ id }: EditorPageProps) {
     };
   }, [saveToApi]);
 
-  function handleFieldsChange(next: FieldValues) {
+  const handleFieldsChange = useCallback((next: FieldValues) => {
     setFields(next);
     scheduleSave(next, content);
-  }
+  // scheduleSave 是穩定的元件內函式；content 變動時要拿到最新值，故列為依賴。
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [content]);
 
   async function handleConfirmPublish() {
     if (!draftId || publishing) return;
@@ -233,108 +236,110 @@ export default function EditorPage({ id }: EditorPageProps) {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-950">
-      {/* TopBar */}
-      <header className="flex items-center justify-between px-6 py-3 bg-white dark:bg-gray-950 border-b border-gray-200 dark:border-gray-800 shrink-0">
-        <button
-          onClick={() => navigate("/")}
-          className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
-        >
-          ← 返回列表
-        </button>
-        <div className="flex items-center gap-3">
-          <span className={`text-sm ${SAVE_COLOR[saveStatus]}`}>
-            {SAVE_LABEL[saveStatus]}
-          </span>
+    <EditorProvider draftId={draftId} fields={fields} content={content} updateFields={handleFieldsChange}>
+      <div className="h-screen flex flex-col bg-gray-50 dark:bg-gray-950">
+        {/* TopBar */}
+        <header className="flex items-center justify-between px-6 py-3 bg-white dark:bg-gray-950 border-b border-gray-200 dark:border-gray-800 shrink-0">
           <button
-            onClick={() => save(fields, content)}
-            className="px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
+            onClick={() => navigate("/")}
+            className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 transition-colors"
           >
-            儲存
+            ← 返回列表
           </button>
-          <button
-            onClick={() => setConfirmOpen(true)}
-            disabled={publishing || saveStatus === "saving"}
-            className="px-3 py-1.5 text-sm font-medium text-white bg-green-600 hover:bg-green-500 disabled:opacity-50 rounded-md transition-colors"
-          >
-            {publishing ? "送出中..." : "送出 PR"}
-          </button>
-        </div>
-      </header>
-
-      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
-        <DialogContent showCloseButton={false}>
-          <DialogHeader>
-            <DialogTitle>確認送出 PR</DialogTitle>
-            <DialogDescription>
-              將會儲存目前內容並對 GitHub 開一個 Pull Request，確定要繼續嗎？
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <DialogClose
-              render={
-                <button className="px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors" />
-              }
-            >
-              取消
-            </DialogClose>
+          <div className="flex items-center gap-3">
+            <span className={`text-sm ${SAVE_COLOR[saveStatus]}`}>
+              {SAVE_LABEL[saveStatus]}
+            </span>
             <button
-              onClick={handleConfirmPublish}
-              className="px-3 py-1.5 text-sm font-medium text-white bg-green-600 hover:bg-green-500 rounded-md transition-colors"
+              onClick={() => save(fields, content)}
+              className="px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
             >
-              確認送出
+              儲存
             </button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      {prError && (
-        <div className="px-6 py-2 bg-red-50 dark:bg-red-950 border-b border-red-200 dark:border-red-800 text-sm text-red-600 dark:text-red-400">
-          PR 送出失敗：{prError}
-        </div>
-      )}
-
-      {/* Fields panel */}
-      <FieldsPanel fields={fields} onChange={handleFieldsChange} content={content} draftId={draftId} />
-
-      {/* Mode toggle */}
-      <div className="flex justify-end px-6 py-2 bg-white dark:bg-gray-950 border-b border-gray-200 dark:border-gray-800 shrink-0">
-        <div className="flex items-center gap-0.5 rounded-md bg-gray-100 dark:bg-gray-800 p-0.5">
-          {MODE_OPTIONS.map((opt) => (
             <button
-              key={opt.value}
-              onClick={() => setMode(opt.value)}
-              className={`px-2.5 py-1 text-xs font-medium rounded transition-colors ${
-                mode === opt.value
-                  ? "bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100 shadow-sm"
-                  : "text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100"
+              onClick={() => setConfirmOpen(true)}
+              disabled={publishing || saveStatus === "saving"}
+              className="px-3 py-1.5 text-sm font-medium text-white bg-green-600 hover:bg-green-500 disabled:opacity-50 rounded-md transition-colors"
+            >
+              {publishing ? "送出中..." : "送出 PR"}
+            </button>
+          </div>
+        </header>
+
+        <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+          <DialogContent showCloseButton={false}>
+            <DialogHeader>
+              <DialogTitle>確認送出 PR</DialogTitle>
+              <DialogDescription>
+                將會儲存目前內容並對 GitHub 開一個 Pull Request，確定要繼續嗎？
+              </DialogDescription>
+            </DialogHeader>
+            <DialogFooter>
+              <DialogClose
+                render={
+                  <button className="px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors" />
+                }
+              >
+                取消
+              </DialogClose>
+              <button
+                onClick={handleConfirmPublish}
+                className="px-3 py-1.5 text-sm font-medium text-white bg-green-600 hover:bg-green-500 rounded-md transition-colors"
+              >
+                確認送出
+              </button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+        {prError && (
+          <div className="px-6 py-2 bg-red-50 dark:bg-red-950 border-b border-red-200 dark:border-red-800 text-sm text-red-600 dark:text-red-400">
+            PR 送出失敗：{prError}
+          </div>
+        )}
+
+        {/* Fields panel */}
+        <FieldsPanel />
+
+        {/* Mode toggle */}
+        <div className="flex justify-end px-6 py-2 bg-white dark:bg-gray-950 border-b border-gray-200 dark:border-gray-800 shrink-0">
+          <div className="flex items-center gap-0.5 rounded-md bg-gray-100 dark:bg-gray-800 p-0.5">
+            {MODE_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => setMode(opt.value)}
+                className={`px-2.5 py-1 text-xs font-medium rounded transition-colors ${
+                  mode === opt.value
+                    ? "bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100 shadow-sm"
+                    : "text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100"
+                }`}
+              >
+                {opt.label}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Editor + Preview */}
+        <div className="flex flex-1 overflow-hidden">
+          {mode !== "preview" && (
+            <MarkdownEditor
+              value={content}
+              onChange={handleContentChange}
+              onViewChange={setEditorView}
+              className={`flex-1 overflow-hidden [&_.cm-editor]:h-full ${
+                mode === "both" ? "border-r border-gray-200 dark:border-gray-800" : ""
               }`}
-            >
-              {opt.label}
-            </button>
-          ))}
+            />
+          )}
+          {mode !== "editor" && (
+            <MarkdownPreview
+              ref={setPreviewEl}
+              content={content}
+              className="flex-1 overflow-auto bg-white dark:bg-gray-950"
+            />
+          )}
         </div>
       </div>
-
-      {/* Editor + Preview */}
-      <div className="flex flex-1 overflow-hidden">
-        {mode !== "preview" && (
-          <MarkdownEditor
-            value={content}
-            onChange={handleContentChange}
-            onViewChange={setEditorView}
-            className={`flex-1 overflow-hidden [&_.cm-editor]:h-full ${
-              mode === "both" ? "border-r border-gray-200 dark:border-gray-800" : ""
-            }`}
-          />
-        )}
-        {mode !== "editor" && (
-          <MarkdownPreview
-            ref={setPreviewEl}
-            content={content}
-            className="flex-1 overflow-auto bg-white dark:bg-gray-950"
-          />
-        )}
-      </div>
-    </div>
+    </EditorProvider>
   );
 }

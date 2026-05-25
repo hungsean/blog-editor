@@ -4,6 +4,7 @@ import DatePicker from "./DatePicker";
 import OgImageDialog from "./OgImageDialog";
 import TranslationButtons from "./TranslationButtons";
 import { useSlugCheck } from "./useSlugCheck";
+import { useEditor } from "../../contexts/EditorContext";
 import { LANG_OPTIONS } from "../../lib/langs";
 
 export interface FieldValues {
@@ -12,18 +13,9 @@ export interface FieldValues {
   lang: string;
   description: string;
   tags: string[];
-  pubDate: string;
+pubDate: string;
   nsfw: boolean;
   ogImage: string;
-}
-
-interface FieldsPanelProps {
-  fields: FieldValues;
-  onChange: (fields: FieldValues) => void;
-  /** 文章正文，翻譯功能需要。 */
-  content: string;
-  /** 生成 OG 圖時用來組 R2 鍵值 `og/{draftId}.png`。 */
-  draftId: string | null;
 }
 
 const inputCls =
@@ -38,14 +30,15 @@ const fieldBtnCls =
   "hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors " +
   "disabled:opacity-50 disabled:cursor-not-allowed";
 
-export default function FieldsPanel({ fields, onChange, content, draftId }: FieldsPanelProps) {
+export default function FieldsPanel() {
+  const { fields, updateFields, draftId } = useEditor();
   const [collapsed, setCollapsed] = useState(false);
   const [tagInput, setTagInput] = useState("");
   const [ogDialog, setOgDialog] = useState<null | "pick" | "generate">(null);
   const slugCheck = useSlugCheck(fields.slug, fields.lang, draftId);
 
   function set<K extends keyof FieldValues>(key: K, value: FieldValues[K]) {
-    onChange({ ...fields, [key]: value });
+    updateFields({ ...fields, [key]: value });
   }
 
   function addTag(raw: string) {
@@ -65,7 +58,7 @@ export default function FieldsPanel({ fields, onChange, content, draftId }: Fiel
       e.preventDefault();
       addTag(tagInput);
     } else if (e.key === "Backspace" && tagInput === "" && fields.tags.length > 0) {
-      removeTag(fields.tags[fields.tags.length - 1]!);
+      removeTag(fields.tags.at(-1)!);
     }
   }
 
@@ -233,7 +226,7 @@ export default function FieldsPanel({ fields, onChange, content, draftId }: Fiel
                 className={fieldBtnCls}
                 onClick={() => setOgDialog("generate")}
                 disabled={!draftId || !fields.title.trim()}
-                title={!fields.title.trim() ? "請先填寫標題" : undefined}
+                title={fields.title.trim() ? undefined : "請先填寫標題"}
               >
                 生成 OG 圖
               </button>
@@ -241,7 +234,7 @@ export default function FieldsPanel({ fields, onChange, content, draftId }: Fiel
           </div>
 
           {/* 翻譯 */}
-          <TranslationButtons fields={fields} content={content} draftId={draftId} />
+          <TranslationButtons />
         </div>
       )}
 
@@ -249,17 +242,6 @@ export default function FieldsPanel({ fields, onChange, content, draftId }: Fiel
         open={ogDialog !== null}
         onOpenChange={(o) => !o && setOgDialog(null)}
         mode={ogDialog ?? "pick"}
-        draftId={draftId}
-        meta={{
-          title: fields.title,
-          description: fields.description,
-          date: fields.pubDate,
-          tags: fields.tags,
-        }}
-        onApply={(url) => {
-          set("ogImage", url);
-          setOgDialog(null);
-        }}
       />
     </div>
   );

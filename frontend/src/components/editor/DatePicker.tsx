@@ -10,12 +10,14 @@ interface DatePickerProps {
   readonly className?: string;
 }
 
+// change string into Date
 function parseDate(str: string): Date | undefined {
   if (!str) return undefined;
   const d = new Date(str + "T00:00:00");
   return Number.isNaN(d.getTime()) ? undefined : d;
 }
 
+// change Date into string
 function formatDate(d: Date): string {
   const y = d.getFullYear();
   const m = String(d.getMonth() + 1).padStart(2, "0");

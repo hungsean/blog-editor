@@ -19,6 +19,11 @@ const drafts = new Hono();
  * 換行等 YAML 特殊字元時都能產出合法輸出，不會壞掉 frontmatter。
  * 陣列強制以 flow 樣式（`[a, b]`）輸出，讓產出的 frontmatter 更接近既有格式；
  * `parseFrontmatter` 同樣使用 `yaml` library，因此 flow / block array 都能讀回。
+ *
+ * `toString` 以 `defaultStringType: "QUOTE_DOUBLE"` 強制所有字串「值」一律用雙引號
+ * 包住（issue #29），避免輸出隨內容在裸值 / 帶引號間擺盪，讓 frontmatter 格式統一、
+ * 可預期。必須同時設 `defaultKeyType: "PLAIN"`，否則 key 會跟著 `defaultStringType`
+ * 一起被引號包住（`"title":`），這不是我們要的。
  */
 function buildFrontmatter(draft: Draft): { frontmatter: string; date: string; slug: string } {
   const fields = JSON.parse(draft.fields || "{}");
@@ -36,7 +41,10 @@ function buildFrontmatter(draft: Draft): { frontmatter: string; date: string; sl
 
   const doc = new Document(fm);
   visit(doc, { Seq: (_key, node) => { node.flow = true; } });
-  const frontmatter = doc.toString();
+  const frontmatter = doc.toString({
+    defaultStringType: "QUOTE_DOUBLE",
+    defaultKeyType: "PLAIN",
+  });
 
   return { frontmatter, date, slug };
 }

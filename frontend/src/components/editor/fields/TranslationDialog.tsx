@@ -9,12 +9,12 @@ import {
   DialogDescription,
   DialogFooter,
   DialogClose,
-} from "../ui/dialog";
-import { Button } from "../ui/button";
-import { createDraft } from "../../lib/api/drafts";
-import { translateContent } from "../../lib/api/translation";
-import { langLabel } from "../../lib/langs";
-import { useEditor } from "../../contexts/EditorContext";
+} from "../../ui/dialog";
+import { Button } from "../../ui/button";
+import { createDraft } from "../../../lib/api/drafts";
+import { translateContent } from "../../../lib/api/translation";
+import { langLabel } from "../../../lib/langs";
+import { useEditor } from "../../../contexts/EditorContext";
 
 interface TranslationDialogProps {
   open: boolean;

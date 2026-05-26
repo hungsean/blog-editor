@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { fetchSlugMatches, type SlugMatch } from "../../lib/api/slug";
+import { fetchSlugMatches, type SlugMatch } from "../../../lib/api/slug";
 
 /** slug 檢查狀態：閒置、檢查中、可用、衝突、查詢失敗。 */
 export type SlugCheckState =

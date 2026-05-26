@@ -8,12 +8,12 @@ import {
   DialogDescription,
   DialogFooter,
   DialogClose,
-} from "../ui/dialog";
-import { Button } from "../ui/button";
-import ImageLibrary from "./ImageLibrary";
-import type { ImageItem } from "../../lib/api/images";
-import { generateOgPreview, uploadOgImage } from "../../lib/api/og";
-import { useEditor } from "../../contexts/EditorContext";
+} from "../../ui/dialog";
+import { Button } from "../../ui/button";
+import ImageLibrary from "../ImageLibrary";
+import type { ImageItem } from "../../../lib/api/images";
+import { generateOgPreview, uploadOgImage } from "../../../lib/api/og";
+import { useEditor } from "../../../contexts/EditorContext";
 
 interface OgImageDialogProps {
   open: boolean;

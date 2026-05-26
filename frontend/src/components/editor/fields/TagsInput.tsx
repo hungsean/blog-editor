@@ -38,8 +38,9 @@ export default function TagsInput({ id, tags, onChange, className }: TagsInputPr
     if (e.key === "Enter" || e.key === ",") {
       e.preventDefault();
       addTag(input);
-    } else if (e.key === "Backspace" && input === "" && tags.length > 0) {
-      removeTag(tags.at(-1)!);
+    } else if (e.key === "Backspace" && input === "") {
+      const last = tags.at(-1);
+      if (last !== undefined) removeTag(last);
     }
   }
 

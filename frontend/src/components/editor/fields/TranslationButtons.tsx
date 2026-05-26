@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
-import { fetchDrafts } from "../../lib/api/drafts";
-import { fetchTranslationStatus } from "../../lib/api/translation";
-import { LANG_OPTIONS, langLabel } from "../../lib/langs";
+import { fetchDrafts } from "../../../lib/api/drafts";
+import { fetchTranslationStatus } from "../../../lib/api/translation";
+import { LANG_OPTIONS, langLabel } from "../../../lib/langs";
 import TranslationDialog from "./TranslationDialog";
-import { useEditor } from "../../contexts/EditorContext";
+import { useEditor } from "../../../contexts/EditorContext";
 
 const btnCls =
   "px-3 py-2 text-sm rounded-md border border-gray-200 dark:border-gray-700 whitespace-nowrap " +

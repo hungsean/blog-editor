@@ -5,8 +5,8 @@ import TagsInput from "./TagsInput";
 import OgImageDialog from "./OgImageDialog";
 import TranslationButtons from "./TranslationButtons";
 import { useSlugCheck } from "./useSlugCheck";
-import { useEditor } from "../../contexts/EditorContext";
-import { LANG_OPTIONS } from "../../lib/langs";
+import { useEditor } from "../../../contexts/EditorContext";
+import { LANG_OPTIONS } from "../../../lib/langs";
 
 export interface FieldValues {
   title: string;

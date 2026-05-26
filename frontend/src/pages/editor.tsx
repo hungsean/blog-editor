@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { fetchDraft, createDraft, updateDraft, publishDraft, type Draft } from "../lib/api/drafts";
-import FieldsPanel, { type FieldValues } from "../components/editor/FieldsPanel";
+import FieldsPanel, { type FieldValues } from "../components/editor/fields/FieldsPanel";
 import { EditorProvider } from "../contexts/EditorContext";
 import MarkdownEditor from "../components/editor/MarkdownEditor";
 import MarkdownPreview from "../components/editor/MarkdownPreview";
@@ -130,7 +130,7 @@ export default function EditorPage({ id }: Readonly<EditorPageProps>) {
       })
       .catch(() => setSaveStatus("error"))
       .finally(() => setLoading(false));
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   /**
@@ -177,15 +177,15 @@ export default function EditorPage({ id }: Readonly<EditorPageProps>) {
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
       const pending = pendingSaveRef.current;
-      if (pending) saveToApi(pending.fields, pending.content).catch(() => {});
+      if (pending) saveToApi(pending.fields, pending.content).catch(() => { });
     };
   }, [saveToApi]);
 
   const handleFieldsChange = useCallback((next: FieldValues) => {
     setFields(next);
     scheduleSave(next, content);
-  // scheduleSave 是穩定的元件內函式；content 變動時要拿到最新值，故列為依賴。
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    // scheduleSave 是穩定的元件內函式；content 變動時要拿到最新值，故列為依賴。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [content]);
 
   async function handleConfirmPublish() {
@@ -307,11 +307,10 @@ export default function EditorPage({ id }: Readonly<EditorPageProps>) {
               <button
                 key={opt.value}
                 onClick={() => setMode(opt.value)}
-                className={`px-2.5 py-1 text-xs font-medium rounded transition-colors ${
-                  mode === opt.value
+                className={`px-2.5 py-1 text-xs font-medium rounded transition-colors ${mode === opt.value
                     ? "bg-white dark:bg-gray-950 text-gray-900 dark:text-gray-100 shadow-sm"
                     : "text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100"
-                }`}
+                  }`}
               >
                 {opt.label}
               </button>
@@ -326,9 +325,8 @@ export default function EditorPage({ id }: Readonly<EditorPageProps>) {
               value={content}
               onChange={handleContentChange}
               onViewChange={setEditorView}
-              className={`flex-1 overflow-hidden [&_.cm-editor]:h-full ${
-                mode === "both" ? "border-r border-gray-200 dark:border-gray-800" : ""
-              }`}
+              className={`flex-1 overflow-hidden [&_.cm-editor]:h-full ${mode === "both" ? "border-r border-gray-200 dark:border-gray-800" : ""
+                }`}
             />
           )}
           {mode !== "editor" && (

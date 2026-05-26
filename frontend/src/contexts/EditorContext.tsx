@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useMemo } from "react";
-import type { FieldValues } from "../components/editor/FieldsPanel";
+import type { FieldValues } from "../components/editor/fields/FieldsPanel";
 
 /**
  * 編輯器頁面共享的草稿狀態。

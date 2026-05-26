@@ -8,7 +8,7 @@ interface EditPresetFormProps {
     onCancel: () => void;
 }
 
-export default function EditPresetForm({ preset, onUpdated, onCancel }: EditPresetFormProps) {
+export default function EditPresetForm({ preset, onUpdated, onCancel }: Readonly<EditPresetFormProps>) {
     const initialValues: PresetFormValues = {
         keywords: JSON.parse(preset.keywords) as string[],
         translations: (() => {

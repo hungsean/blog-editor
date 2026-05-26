@@ -35,3 +35,5 @@ docker compose up -d --build
 - edge case 和注意事項必須寫在最靠近程式碼的地方，不要只放在 README
 - 顯而易見的函式（純 getter、簡單映射）不需要 JSDoc
 - 架構層級的決策分別記錄在 `frontend/CLAUDE.md` 和 `backend/CLAUDE.md`
+
+Before editing any file, read it first. Before modifying a function, grep for all callers. Research before you edit.  

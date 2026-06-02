@@ -1,3 +1,5 @@
+# Frontend CLAUDE.md
+
 ## 執行
 
 ```sh
@@ -17,7 +19,7 @@ bun run build # vite build
 
 ## 專案架構
 
-```
+```text
 src/
 ├── main.tsx              # React 入口，wouter Switch/Route 路由設定
 ├── styles.css            # 全域樣式（含 .prose markdown preview 樣式）
@@ -27,13 +29,23 @@ src/
 │       ├── drafts.ts     # fetch/create/update draft API
 │       ├── images.ts     # 圖片庫 list/sync/upload API
 │       └── presets.ts    # translation presets CRUD API
+├── contexts/
+│   ├── EditorContext.tsx  # 編輯器共享狀態（fields / content / draftId）與 FieldValues 型別
+│   └── ListContext.tsx    # 草稿列表共享狀態（多選模式等）
 ├── components/
 │   ├── ui/               # shadcn/ui 自動產生的元件（勿手動修改）
 │   ├── editor/
 │   │   ├── MarkdownEditor.tsx     # CodeMirror 6 React wrapper（含上傳圖片工具列）
 │   │   ├── MarkdownPreview.tsx    # marked + hljs preview
 │   │   ├── ImagePickerDialog.tsx  # 圖片庫挑選對話框（sync / upload / 選圖插入）
-│   │   └── FieldsPanel.tsx        # 可折疊的 frontmatter 欄位面板
+│   │   └── fields/
+│   │       ├── FieldsPanel.tsx    # 可折疊的 frontmatter 欄位面板
+│   │       ├── DatePicker.tsx
+│   │       ├── TagsInput.tsx
+│   │       ├── OgImageDialog.tsx
+│   │       ├── TranslationButtons.tsx
+│   │       ├── TranslationDialog.tsx
+│   │       └── useSlugCheck.ts
 │   ├── settings/
 │   │   ├── PresetSettings.tsx
 │   │   ├── PresetForm.tsx

@@ -5,8 +5,13 @@
 ## 背景
 
 目前 DB 操作全部用 `bun:sqlite` 的 **同步** API（`db.query().get()/.all()/.run()`），
-散布在 `src/routes/` 與 `src/lib/prChecker.ts`。要支援 Cloudflare D1，必須改成
+散布在 `src/routes/` 與 `src/lib/prChecker.ts`。要支援 Cloudflare D1，query 介面必須是
 **非同步**，而且最好用一層抽象同時相容兩種 driver。主人已選定 **Drizzle ORM**。
+
+> 📝 **精準說明（避免誤解）**：Drizzle 並非「自動把同步變非同步」。`drizzle-orm/bun-sqlite`
+> 本身 **同時提供 sync 與 async API**（見官方文件 <https://orm.drizzle.team/docs/connect-bun-sqlite>）；
+> 而 `drizzle-orm/d1` **只有 async**。為了讓同一份 query code 兩種 driver 共用，本專案
+> **統一規定一律用 `await`（async 寫法）**——這是我們的撰寫約定，不是 Drizzle 的魔法。
 
 本 issue 只做第一步：**導入 Drizzle、定義 schema、把所有 query 改寫成 Drizzle async 風格，
 但 driver 仍用 `bun-sqlite`**。目的是在不改變部署方式的前提下完成最大宗的程式改寫，

@@ -19,10 +19,35 @@ Worker，並完成整體部署文件與 self-host 路徑的保留。
 1. **Pages 設定**
    - build command：`cd frontend && bun install && bun run build`，輸出 `frontend/dist`。
    - SPA fallback：Pages 內建（所有未命中路由回 `index.html`）。
-2. **/api 轉發**（擇一）
-   - Pages → Worker 用 **Service binding** 或 `_routes.json` + 同 domain 路由，
-     讓 `/api/*` 走 Worker；前端維持相對路徑（`VITE_API_URL` 留空）。
-   - 或前端打 Worker 的 custom domain（需設 CORS，較不推薦）。
+2. **/api 轉發到 Worker（正確做法，修正先前誤述）**
+
+   先前把 `_routes.json` 當成 rewrite 工具是 **錯的**：`_routes.json` 只決定哪些路徑
+   **觸發 / 略過 Pages Function**（include/exclude），它 **不負責轉發**。要把 `/api/*`
+   導到後端 Worker，需要三樣東西一起：
+
+   1. **新增 Pages Function**：`frontend/functions/api/[[path]].ts`（catch-all），
+      內容明確呼叫 Service binding：
+
+      ```ts
+      export const onRequest: PagesFunction<{ API: Fetcher }> = (context) =>
+        context.env.API.fetch(context.request);
+      ```
+
+   2. **設定 Service binding**：在 Pages 專案的 Settings → Functions → Service bindings
+      新增一個 binding（如 `API`）指向 #07 部署的後端 Worker。
+      （參考：Pages Functions bindings <https://developers.cloudflare.com/pages/functions/bindings/>）
+
+   3. **`frontend/public/_routes.json`**：確保 `/api/*` 會觸發 Function、其餘靜態資源略過，
+      減少不必要的 Function 調用：
+
+      ```json
+      { "version": 1, "include": ["/api/*"], "exclude": [] }
+      ```
+
+      （參考：Pages Functions routing <https://developers.cloudflare.com/pages/functions/routing/>）
+
+   前端維持相對路徑（`VITE_API_URL` 留空）即同源，無 CORS。
+   備案：前端直打 Worker 的 custom domain（需在 #03 env provider 放行 CORS，較不推薦）。
 3. **環境變數**：Pages 上 `VITE_API_URL` 留空走同源；保留 `.env.example` 給 self-host。
 4. **self-host 保留**
    - `docker-compose.yml` / nginx / 兩個 Dockerfile 仍可用於 self-host；
@@ -40,6 +65,7 @@ Worker，並完成整體部署文件與 self-host 路徑的保留。
 ## 驗收標準
 
 - [ ] 前端在 Pages 上線，路由 / 重整 / 深連結正常（SPA fallback）。
-- [ ] `/api` 同源轉發到 Worker，瀏覽器無 CORS 錯誤。
+- [ ] `functions/api/[[path]].ts` + Service binding + `_routes.json` 三者就位，`/api/*` 正確轉發到 Worker。
+- [ ] `/api` 同源，瀏覽器無 CORS 錯誤。
 - [ ] self-host（docker compose）仍能完整跑起來。
 - [ ] README 同時說明 self-host 與 Cloudflare 兩種部署。

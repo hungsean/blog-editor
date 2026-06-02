@@ -16,13 +16,26 @@ aws-sdk 更輕。需要把「物件儲存」與「暫存」抽象成介面，兩
 - Cloudflare 實作：R2 binding（`env.BUCKET.put/get/list/delete`）。
 - 暫存檔（OG temp）從本地磁碟改走 Storage（短 TTL key），移除 `node:fs` 依賴。
 
+## 先確認：`upload.ts` 的 endpoint 可能已廢棄（review 點 7）
+
+已查證前端（`frontend/src/`）目前只呼叫 **`/images/upload`** 與 **`/og/preview`、`/og/upload`**，
+**沒有任何 caller 打 `/upload/r2` 或 `/upload/temp`**。
+
+- 若無外部 / 第三方相容需求 → **直接刪除 `src/routes/upload.ts`（整個 `/upload/*`）**，
+  連帶 `OG_TEMP_DIR` 的 `node:fs` 暫存邏輯一起移除，Worker 不必再做相容層。這會讓本 issue
+  與 #06 都更乾淨（少一塊要去 fs 化的東西）。
+- 若確有外部 caller → 才走下面的「改走 Storage」路徑。
+
+**先做這個確認再決定範圍。** 以下影響檔案以「刪除 upload.ts」為預設。
+
 ## 影響檔案
 
 - 新增 `src/lib/storage/` — 介面 + 兩個實作。
 - `src/lib/r2.ts` — 改為 S3 實作，或併入 storage 模組。
-- `src/routes/upload.ts` — `/upload/r2`、`/upload/temp`、`/upload/temp/:token` 改走 Storage。
+- `src/routes/upload.ts` — **預設刪除**（無前端 caller）；若需保留則改走 Storage。
 - `src/routes/images.ts` — `/images/sync`（list）、`/images/upload`（put）改走 Storage。
 - `src/routes/og.ts` — `/og/upload` 改走 Storage（與 #06 協調）。
+- `src/routes/api.ts` — 移除已刪除路由的 mount。
 
 ## 實作步驟
 

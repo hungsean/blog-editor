@@ -8,6 +8,13 @@ Hono 本身在 Bun 與 Workers 上都能跑，但兩種環境的 **入口形式*
 **DB binding 取得方式** 不同。本 issue 建立一層薄抽象，讓同一個 `app` 兩邊都能用，
 這是後續 #04 ~ #06 的地基。
 
+> ⚠️ **重要前提（避免 review 點 1 的陷阱）**：共用 `app` 會 mount `routes/api.ts` 的
+> 所有子 router，其中 `upload.ts`（`node:fs` / `Bun.file`）與 `og.ts`（`@resvg/resvg-js`，
+> 經 `ogImage.ts`）仍 **transitively import Bun-only / native 模組**。只要 `worker.ts`
+> import 到 `app`，Workers bundle 就會把這些拉進來而 build / 啟動失敗。
+> 因此本 issue **不要求** `wrangler dev` 跑通完整 app——只要求 runtime 抽象與分檔成立，
+> 完整 Worker 啟動驗收移到 #04（storage 去 fs 化）與 #06（og 去 native 化）之後（見 #07）。
+
 ## 兩環境差異
 
 | 項目 | self-host (Bun) | Cloudflare (Workers) |
@@ -23,8 +30,25 @@ Hono 本身在 Bun 與 Workers 上都能跑，但兩種環境的 **入口形式*
 - 用一個 middleware 在每個 request 初始化 runtime context（self-host 走單例；
   Workers 走 binding）。
 - 環境變數讀取集中到一個 `getEnv(c)` provider，移除散落的 `process.env` 直接存取。
+- 把 **module-load 時讀 env 的模組改成 factory**（見下方清單），消除「import 即讀 env」。
 - 拆出兩個入口檔：`server.bun.ts`（Bun.serve）與 `worker.ts`（Workers fetch+scheduled），
   共用同一個 `app`。
+
+### module-load 讀 env 的模組必須改 factory（review 點 3）
+
+可行性報告原本說「GitHub、translator 完全不用改」是 **錯的**——它們的 fetch 邏輯確實不用改，
+但都在 **top-level const** 讀 `process.env`，在 Workers 上 binding 尚未注入即執行：
+
+| 模組 | 現況（top-level 讀取） | 改法 |
+| --- | --- | --- |
+| `src/lib/github.ts:15-18` | `GITHUB_TOKEN/OWNER/REPO/DEFAULT_BRANCH` | 改成 `createGithub(env)` factory，回傳含這些 method 的物件 |
+| `src/lib/translator.ts:15-17` | `OPENAI_API_KEY/MODEL/BASE_URL` | 改成 `createTranslator(env)` factory |
+| `src/lib/prChecker.ts:20-21` | `PR_CHECK_INTERVAL_MS`、`NODE_ENV` | 參數化（INTERVAL 給 self-host 用；DEV flag 從 env 傳入），呼應 #05 |
+| `src/lib/r2.ts:16-20` | `R2_ACCOUNT_ID/...` | 由 #04 的 Storage factory 接手 |
+
+caller（`routes/github.ts`、`routes/translate.ts`、`drafts.ts` 等）改成從 `c.var.env`
+取得設定、用 factory 建立 client。`GITHUB_DEFAULT_BRANCH` 目前是 `export const`，被
+`prChecker.ts` import，改 factory 後要一併調整引用點。
 
 ## 實作步驟
 
@@ -49,6 +73,9 @@ Hono 本身在 Bun 與 Workers 上都能跑，但兩種環境的 **入口形式*
 ## 驗收標準
 
 - [ ] `bun run dev` 經由 `server.bun.ts` 啟動，功能與現況一致。
-- [ ] `wrangler dev` 經由 `worker.ts` 能啟動並回應基本 API（DB 走 local D1）。
-- [ ] route handler 不再直接 import `db` 或讀 `process.env`，一律走 context。
-- [ ] `app.ts` 不含任何 Bun-only import。
+- [ ] `github.ts` / `translator.ts` / `prChecker.ts` / `r2.ts` 已無 top-level `process.env` 讀取，全部改 factory。
+- [ ] route handler 不再直接 import `db` / client 或讀 `process.env`，一律走 `c.var`。
+- [ ] `app.ts` 自身不含任何 Bun-only import（但其 mount 的 upload/og 仍會，故見下）。
+- [ ] ⚠️ **本 issue 不驗收 `wrangler dev` 跑通完整 app**——upload/og 的 Bun-only / native
+      相依要等 #04、#06 清掉。可先用一個只 mount drafts/slug/presets 的精簡 worker entry
+      做煙霧測試，證明 runtime 抽象成立即可。完整 Worker 啟動驗收在 #07。

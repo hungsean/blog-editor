@@ -41,7 +41,35 @@ OG 圖片生成 **仍在後端跑**，沒有移到前端：
   3. self-host 同樣走 Storage（或本機路徑），不再 `fetch` Google Fonts 寫磁碟。
 - 若 CJK 全字型太大導致冷啟動慢，評估 **字型 subset**（只保留常用字）或限制 OG 標題字元集。
 
-## 實作步驟
+## ⚠️ 先做 feasibility spike，再做正式實作（review 點 5）
+
+「OG 生成耗 CPU，但 1200×630 通常可接受」是 **未經驗證的假設**。Workers 的硬限制可能讓
+整個方案在某些方案層級不可行，必須先驗證再投入改寫：
+
+| 限制 | Workers Free | Workers Paid |
+| --- | --- | --- |
+| 每次 request CPU 時間 | **10 ms** | 預設 30 s（可調，上限更高） |
+| 記憶體 | 128 MB | 128 MB |
+| Worker bundle（gzip 後） | **3 MB** | **10 MB** |
+
+（參考：Workers limits <https://developers.cloudflare.com/workers/platform/limits/>）
+
+satori（SVG 生成）+ resvg-wasm（rasterize PNG）+ CJK 字型，**幾乎不可能塞進 Free 的
+10 ms CPU 與 3 MB bundle**。所以本 issue 預設 **最低需 Workers Paid**，且仍需 spike 確認
+實際 CPU / 記憶體 / bundle 數字。
+
+### #06a — Spike（先做，產出 go/no-go）
+
+1. 最小 PoC worker：satori + `@resvg/resvg-wasm`，硬編一張含 CJK 標題的 OG。
+2. 量測並記錄：
+   - gzip 後 bundle 大小（含 wasm）是否 < 10 MB（Paid）。
+   - 單次生成的 CPU 時間（`wrangler dev` / 部署後觀測）與記憶體峰值。
+   - 冷啟動含「從 R2 拉字型」的延遲。
+   - CJK 是否正確顯示（字型 subset 後是否仍涵蓋標題用字）。
+3. 產出結論：可行的最低 Workers 方案（預期 Paid）、字型策略（全量 vs subset）、
+   或 fallback（OG 只在 self-host / 改前端 canvas）。**spike 失敗則回 EPIC 重新選方案。**
+
+### #06b — 正式實作（spike 通過後）
 
 1. `bun add @resvg/resvg-wasm`，移除 `@resvg/resvg-js`。
 2. `ogImage.ts`：
@@ -61,8 +89,10 @@ OG 圖片生成 **仍在後端跑**，沒有移到前端：
 
 ## 驗收標準
 
+- [ ] **#06a spike** 有書面結論：bundle 大小、CPU、記憶體、冷啟動、CJK 顯示數字齊全，
+      並指定最低 Workers 方案（預期 Paid）。
 - [ ] self-host：`/og/preview` 產出的 PNG 與現況視覺一致（字型、版面、CJK 正常）。
-- [ ] Workers：`wrangler dev` 下 `/og/preview` 能成功回傳 PNG。
+- [ ] Workers：`wrangler dev` 下 `/og/preview` 能成功回傳 PNG，CPU / 記憶體在所選方案額度內。
 - [ ] 程式碼無 `@resvg/resvg-js`、無 `data/fonts/` 磁碟讀寫。
-- [ ] Worker bundle（含 wasm + 字型策略）在大小上限內。
+- [ ] Worker bundle（含 wasm + 字型策略）gzip 後在所選方案上限內。
 - [ ] `/og/upload` 經 Storage 寫入 R2 `og/{draftId}.png`。

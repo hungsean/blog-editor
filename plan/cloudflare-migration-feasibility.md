@@ -125,9 +125,21 @@ endpoint。**尚未遷移**。
 
 `process.env` / `Bun.env` 要改成 Workers 的 `env` binding（secrets 用 `wrangler secret put`）。GitHub token、OpenAI key 等改成 secrets，R2 改 binding。Hono 透過 `c.env` 取用即可。
 
-### 2.2 外部 API 呼叫（無痛）
+### 2.2 外部 API 呼叫（fetch 邏輯不用改，但 env 讀取要改）
 
-`lib/github.ts`（GitHub REST）、`lib/translator.ts`（OpenAI）都是標準 `fetch`，Workers 原生支援 `fetch`，**完全不用改**。這部分是好消息。
+**更正先前說法**：`lib/github.ts`、`lib/translator.ts` 的 **fetch / API 呼叫邏輯** 確實
+Workers 原生支援、不用改；但它們（與 `prChecker.ts`、`r2.ts`）都在 **module load 時用
+top-level `const` 讀 `process.env`**：
+
+- `lib/github.ts:15-18` — `GITHUB_TOKEN/OWNER/REPO/DEFAULT_BRANCH`
+- `lib/translator.ts:15-17` — `OPENAI_API_KEY/MODEL/BASE_URL`
+- `lib/prChecker.ts:20-21` — `PR_CHECK_INTERVAL_MS`、`NODE_ENV`
+- `lib/r2.ts:16-20` — `R2_*`
+
+Workers 的環境變數只在 **request 的 `env` binding** 注入，module 載入時還拿不到，因此
+這些模組必須改成 **factory（`createGithub(env)` / `createTranslator(env)` …）**，由 caller
+在 request context 內注入設定。**這不是「完全不用改」**——詳見
+[`issue/03-runtime-abstraction-layer.md`](./issue/03-runtime-abstraction-layer.md)。
 
 ---
 
@@ -147,40 +159,39 @@ endpoint。**尚未遷移**。
 ### D1 限制要留意
 
 - 單一 query 結果與 DB 大小有上限（目前資料量遠遠不會碰到，免擔心）。
-- D1 是 **eventually consistent 的分散式**，但對這種單人草稿工具的讀寫模式完全無感。
-- 沒有同步 API——這就是阻礙 A 的根源，務必整輪改寫，不要半套。
+- **一致性（更正）**：D1 預設是單一 primary、強一致，**不該一概說成 eventually consistent**。
+  只有 **選配啟用 read replication** 後才有副本延遲，屆時需用 **Sessions API** 處理 sequential
+  consistency。本專案不啟用 replication 即無此問題。
+  （參考：D1 read replication <https://developers.cloudflare.com/d1/best-practices/read-replication/>）
+- query 介面需 async——這就是 #01/#02 改寫的根源，務必整輪改寫，不要半套。
 
 ---
 
-## 四、建議遷移路線（分階段，降低風險）
+## 四、建議推進路線（依 EPIC：DB → 後端 → 前端）
 
-> 原則：**前端先行、後端後動**，每階段都能獨立驗證。
+> 原則：終極目標是 **self-host 與 Cloudflare 雙環境並存**，不是單向遷移。順序為
+> **DB → 後端 → 前端**，每階段都不破壞 self-host。詳細拆解見 [`issue/`](./issue/)。
 
-### Phase 0 — 前置確認（0.5 天）
-- 確認 OG 圖片生成是否已完全移至前端（決定阻礙 B / D 的命運）。
-- 盤點前端實際呼叫的 API endpoint，標記可退役的路由。
+### Phase A — DB 層（#01、#02）
+- #01：導入 Drizzle、定義 schema、所有 query 統一改 `await`（driver 仍是 bun-sqlite，self-host 零退化）。
+- #02：加 D1 driver + drizzle-kit migrations，dual-driver 依環境切換。
 
-### Phase 1 — 前端上 Pages（0.5 天）
-- Pages 連 repo、設 build、設 `/api` 轉發。
-- 後端暫時仍跑現有 docker（或 Workers 上線前用既有 backend），前端先驗證。
+### Phase B — 後端 Workers 化（同時保留 self-host，#03 ~ #07）
+- #03：runtime 抽象（入口拆檔、env provider、把 module-load 讀 env 的模組改 factory）。
+- #04：物件儲存抽象（aws-sdk S3 ⇄ R2 binding）；確認並刪除廢棄的 `/upload/*`。
+- #05：PR 輪詢 setInterval ⇄ Cron，並修掉既有 N+1。
+- #06：OG 圖片上雲——**先 spike 驗證 Workers 限制**，再做 resvg-wasm 實作（最高風險）。
+- #07：建 D1 / R2 binding / secrets，匯入既有資料，`wrangler deploy`，**此時才驗收完整 Worker 啟動**。
 
-### Phase 2 — D1 化（後端最大工程，2 ~ 3 天）
-- 建 D1、寫 migration、匯入資料。
-- 把所有 DB 呼叫改 async + `c.env.DB`，handler 全面 async 化。
-- 本地用 `wrangler dev` + local D1 測。
+### Phase C — 前端（#08）
+- Pages 部署 + `functions/api/[[path]].ts` + Service binding + `_routes.json` 同源轉發。
+- 整理雙環境部署文件。
 
-### Phase 3 — Workers 周邊改寫（1 ~ 2 天）
-- R2 改 binding、移除 `@aws-sdk/client-s3`。
-- 環境變數改 secrets / binding。
-- `prChecker` 改 Cron Triggers `scheduled` handler。
-- 處理（或刪除）OG / 暫存檔相關程式。
+> **Docker / nginx 不退役**：`docker-compose.yml`、nginx、兩個 Dockerfile 是 **保留的
+> self-host 部署路徑**，README 標明用途；Cloudflare 路徑不需要它們，但兩者並存。
 
-### Phase 4 — 整合與切換（0.5 天）
-- 前端 `/api` 指向 Workers，確認同源免 CORS。
-- 退役 docker-compose、nginx、兩個 Dockerfile。
-- 觀察 Cron、上傳、發 PR 流程。
-
-**合計：約 5 ~ 7 個工作天**，主要成本集中在 Phase 2 的 DB 改寫。
+**合計：約 6 ~ 9 個工作天**（含 #06 spike 的不確定性）；主要成本在 Phase A 的 DB 改寫
+與 #06 的 OG 驗證。
 
 ---
 
@@ -189,11 +200,13 @@ endpoint。**尚未遷移**。
 | 風險 | 等級 | 緩解 |
 | --- | --- | --- |
 | DB 全面 async 改寫遺漏某處 → runtime 才爆 | 中 | 改寫後逐路由測；TypeScript 嚴格模式幫忙抓 |
-| OG 原生模組無法上 Workers | 中 | 確認已移前端則無痛；否則用 wasm resvg 或維持前端產圖 |
-| top-level await / module 單例模式不相容 | 中 | DB binding 改走 request context，migration 走 wrangler |
+| **OG 原生模組（仍在後端）無法上 Workers** | **高** | 先 spike 驗證 resvg-wasm + satori + CJK 字型；預期至少 Workers Paid（#06） |
+| module-load 讀 `process.env` 在 Workers 失效 | 中 | github/translator/prChecker/r2 改 factory，env 從 context 注入（#03） |
+| top-level await / module 單例模式不相容 | 中 | DB 改 request context 取得，migration 走 drizzle-kit + wrangler |
+| prChecker 對每篇 draft 各打一次 GitHub（N+1） | 中 | 依 `pr_url` 分組、batch size、退避 rate-limit（#05） |
 | Cron 最小間隔為 1 分鐘 | 低 | 現況本來就是 60 秒，剛好符合 |
-| 既有 SQLite 資料遷移 | 低 | `.dump` → `wrangler d1 execute` 一次性匯入 |
-| Workers bundle 體積 / CPU time 上限 | 低 | 移除 aws-sdk、satori 等大包後更寬裕 |
+| 既有 SQLite 資料遷移 | 低 | `.dump`（只留 INSERT）→ `wrangler d1 execute` 一次性匯入 |
+| Workers bundle 體積 / CPU time 上限 | 中 | Free 僅 10 ms CPU / 3 MB bundle，OG 預期需 Paid；移除 aws-sdk 減重 |
 
 ---
 
@@ -217,7 +230,8 @@ endpoint。**尚未遷移**。
 ```
 
 - Cloudflare Access 仍可掛在 Pages / Worker 前面控管存取（沿用現有部署思路）。
-- 整套不再需要自管主機、docker、nginx、cloudflared tunnel。
+- 這是 **Cloudflare 部署路徑** 的樣貌；**self-host 路徑（docker compose + 本地 SQLite +
+  S3 相容 R2）並存保留**，兩者共用同一份程式碼，靠環境變數 / binding 切換。
 
 ---
 
@@ -225,4 +239,11 @@ endpoint。**尚未遷移**。
 
 **值得做，而且現在做正是時候**——專案規模還小（後端 ~2300 行）、資料模型乾淨、外部呼叫都是標準 fetch、而且我們本來就在用 R2 與 Cloudflare Access，跟整個 Cloudflare 生態超級契合。Hono 是 Workers 原生框架更是加分。
 
-唯一需要主人先拍板的決策點是 **OG 圖片生成的去留**（阻礙 B）。建議在 Phase 0 先確認它是否已經完全在前端處理——如果是，整個遷移就只剩「DB async 化」這一個主要工程，其餘都是順手變更乾淨的改動。
+兩個需要主人先拍板 / 注意的關鍵：
+
+1. **OG 圖片生成（最高風險）** — 仍在後端、用原生 `@resvg/resvg-js`。Workers 上需先做
+   spike 驗證 CPU / bundle / CJK 字型可行性，且預期 **至少需 Workers Paid**。見 #06。
+2. **改寫量比第一版估計略大** — env 讀取要 factory 化、N+1 要修、儲存層要抽象，
+   但都是一次性、讓兩環境共用同一份程式碼的投資。
+
+完整執行拆解見 [`issue/`](./issue/)，以 `00-epic` 為總覽起點。

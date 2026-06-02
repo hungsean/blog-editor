@@ -1,5 +1,15 @@
 import React, { createContext, useContext, useMemo } from "react";
-import type { FieldValues } from "../components/editor/fields/FieldsPanel";
+
+export interface FieldValues {
+  title: string;
+  slug: string;
+  lang: string;
+  description: string;
+  tags: string[];
+  pubDate: string;
+  nsfw: boolean;
+  ogImage: string;
+}
 
 /**
  * 編輯器頁面共享的草稿狀態。

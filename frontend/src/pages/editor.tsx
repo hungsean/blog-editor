@@ -1,8 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { fetchDraft, createDraft, updateDraft, publishDraft, type Draft } from "../lib/api/drafts";
-import FieldsPanel, { type FieldValues } from "../components/editor/fields/FieldsPanel";
-import { EditorProvider } from "../contexts/EditorContext";
+import FieldsPanel from "../components/editor/fields/FieldsPanel";
+import { EditorProvider, type FieldValues } from "../contexts/EditorContext";
 import MarkdownEditor from "../components/editor/MarkdownEditor";
 import MarkdownPreview from "../components/editor/MarkdownPreview";
 import { useScrollSync } from "../components/editor/useScrollSync";

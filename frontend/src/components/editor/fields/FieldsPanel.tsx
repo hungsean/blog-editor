@@ -6,18 +6,10 @@ import OgImageDialog from "./OgImageDialog";
 import TranslationButtons from "./TranslationButtons";
 import { useSlugCheck } from "./useSlugCheck";
 import { useEditor } from "../../../contexts/EditorContext";
+import type { FieldValues } from "../../../contexts/EditorContext";
 import { LANG_OPTIONS } from "../../../lib/langs";
 
-export interface FieldValues {
-  title: string;
-  slug: string;
-  lang: string;
-  description: string;
-  tags: string[];
-  pubDate: string;
-  nsfw: boolean;
-  ogImage: string;
-}
+export type { FieldValues };
 
 const inputCls =
   "w-full px-3 py-2 text-sm rounded-md border border-gray-200 dark:border-gray-700 " +

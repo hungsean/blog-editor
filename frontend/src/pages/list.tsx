@@ -3,6 +3,7 @@ import TopBar from "../components/TopBar";
 import SelectModeBar from "../components/SelectModeBar";
 import PostList from "../components/PostList";
 import type { Post } from "../components/PostCard";
+import { ListProvider } from "../contexts/ListContext";
 import { fetchDrafts, bulkDeleteDrafts, bulkPublishDrafts } from "../lib/api/drafts";
 
 /**
@@ -82,34 +83,33 @@ export default function ListPage() {
     }, [selectedIds]);
 
     return (
-        <main className="app min-h-screen bg-gray-50 dark:bg-gray-950">
-            <TopBar selectMode={selectMode} onToggleSelectMode={toggleSelectMode} onSynced={loadDrafts} />
-            {selectMode && (
-                <SelectModeBar
-                    selectedCount={selectedIds.size}
-                    onCancel={toggleSelectMode}
-                    onBulkDelete={handleBulkDelete}
-                    onBulkPushPR={handleBulkPushPR}
-                />
-            )}
-            <div className="max-w-4xl mx-auto py-6">
-                {loading && (
-                    <p className="text-center text-gray-400 py-24">Loading...</p>
-                )}
-                {error && (
-                    <p className="text-center text-red-500 py-24">{error}</p>
-                )}
-                {!loading && !error && (
-                    <PostList
-                        posts={posts}
-                        onDelete={(id) => setPosts((prev) => prev.filter((p) => p.id !== id))}
-                        onSynced={loadDrafts}
-                        selectMode={selectMode}
-                        selectedIds={selectedIds}
-                        onToggleSelect={toggleSelect}
+        <ListProvider
+            selectMode={selectMode}
+            selectedIds={selectedIds}
+            toggleSelect={toggleSelect}
+            onDelete={(id) => setPosts((prev) => prev.filter((p) => p.id !== id))}
+            onSynced={loadDrafts}
+        >
+            <main className="app min-h-screen bg-gray-50 dark:bg-gray-950">
+                <TopBar selectMode={selectMode} onToggleSelectMode={toggleSelectMode} onSynced={loadDrafts} />
+                {selectMode && (
+                    <SelectModeBar
+                        selectedCount={selectedIds.size}
+                        onCancel={toggleSelectMode}
+                        onBulkDelete={handleBulkDelete}
+                        onBulkPushPR={handleBulkPushPR}
                     />
                 )}
-            </div>
-        </main>
+                <div className="max-w-4xl mx-auto py-6">
+                    {loading && (
+                        <p className="text-center text-gray-400 py-24">Loading...</p>
+                    )}
+                    {error && (
+                        <p className="text-center text-red-500 py-24">{error}</p>
+                    )}
+                    {!loading && !error && <PostList posts={posts} />}
+                </div>
+            </main>
+        </ListProvider>
     );
 }

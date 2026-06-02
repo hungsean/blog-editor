@@ -1,17 +1,10 @@
 import { useEffect, useState } from "react";
 import { useLocation } from "wouter";
-import { fetchDrafts } from "../../lib/api/drafts";
-import { fetchTranslationStatus } from "../../lib/api/translation";
-import { LANG_OPTIONS, langLabel } from "../../lib/langs";
+import { fetchDrafts } from "../../../lib/api/drafts";
+import { fetchTranslationStatus } from "../../../lib/api/translation";
+import { LANG_OPTIONS, langLabel } from "../../../lib/langs";
 import TranslationDialog from "./TranslationDialog";
-import type { FieldValues } from "./FieldsPanel";
-
-interface TranslationButtonsProps {
-  fields: FieldValues;
-  content: string;
-  /** 目前草稿 id，用來排除自己、避免把自己當成兄弟語言。 */
-  draftId: string | null;
-}
+import { useEditor } from "../../../contexts/EditorContext";
 
 const btnCls =
   "px-3 py-2 text-sm rounded-md border border-gray-200 dark:border-gray-700 whitespace-nowrap " +
@@ -27,7 +20,8 @@ const btnCls =
  * 兄弟語言只比對本工具資料庫中的草稿（{@link fetchDrafts}），
  * 只存在於 GitHub 而非本工具草稿的文章不會被視為已存在。
  */
-export default function TranslationButtons({ fields, content, draftId }: TranslationButtonsProps) {
+export default function TranslationButtons() {
+  const { fields, draftId } = useEditor();
   const [, navigate] = useLocation();
   const [enabled, setEnabled] = useState(false);
   const [siblings, setSiblings] = useState<Record<string, string>>({});
@@ -114,8 +108,6 @@ export default function TranslationButtons({ fields, content, draftId }: Transla
         open={dialogLang !== null}
         onOpenChange={(o) => !o && setDialogLang(null)}
         targetLang={dialogLang ?? ""}
-        fields={fields}
-        content={content}
       />
     </div>
   );

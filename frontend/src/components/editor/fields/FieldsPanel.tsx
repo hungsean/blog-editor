@@ -1,30 +1,15 @@
-import React, { useState } from "react";
+import { useState } from "react";
 import { ChevronDown } from "lucide-react";
 import DatePicker from "./DatePicker";
+import TagsInput from "./TagsInput";
 import OgImageDialog from "./OgImageDialog";
 import TranslationButtons from "./TranslationButtons";
 import { useSlugCheck } from "./useSlugCheck";
-import { LANG_OPTIONS } from "../../lib/langs";
+import { useEditor } from "../../../contexts/EditorContext";
+import type { FieldValues } from "../../../contexts/EditorContext";
+import { LANG_OPTIONS } from "../../../lib/langs";
 
-export interface FieldValues {
-  title: string;
-  slug: string;
-  lang: string;
-  description: string;
-  tags: string[];
-  pubDate: string;
-  nsfw: boolean;
-  ogImage: string;
-}
-
-interface FieldsPanelProps {
-  fields: FieldValues;
-  onChange: (fields: FieldValues) => void;
-  /** 文章正文，翻譯功能需要。 */
-  content: string;
-  /** 生成 OG 圖時用來組 R2 鍵值 `og/{draftId}.png`。 */
-  draftId: string | null;
-}
+export type { FieldValues };
 
 const inputCls =
   "w-full px-3 py-2 text-sm rounded-md border border-gray-200 dark:border-gray-700 " +
@@ -38,35 +23,14 @@ const fieldBtnCls =
   "hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors " +
   "disabled:opacity-50 disabled:cursor-not-allowed";
 
-export default function FieldsPanel({ fields, onChange, content, draftId }: FieldsPanelProps) {
+export default function FieldsPanel() {
+  const { fields, updateFields, draftId } = useEditor();
   const [collapsed, setCollapsed] = useState(false);
-  const [tagInput, setTagInput] = useState("");
   const [ogDialog, setOgDialog] = useState<null | "pick" | "generate">(null);
   const slugCheck = useSlugCheck(fields.slug, fields.lang, draftId);
 
   function set<K extends keyof FieldValues>(key: K, value: FieldValues[K]) {
-    onChange({ ...fields, [key]: value });
-  }
-
-  function addTag(raw: string) {
-    const tag = raw.trim();
-    if (tag && !fields.tags.includes(tag)) {
-      set("tags", [...fields.tags, tag]);
-    }
-    setTagInput("");
-  }
-
-  function removeTag(tag: string) {
-    set("tags", fields.tags.filter((t) => t !== tag));
-  }
-
-  function handleTagKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === "Enter" || e.key === ",") {
-      e.preventDefault();
-      addTag(tagInput);
-    } else if (e.key === "Backspace" && tagInput === "" && fields.tags.length > 0) {
-      removeTag(fields.tags[fields.tags.length - 1]!);
-    }
+    updateFields({ ...fields, [key]: value });
   }
 
   return (
@@ -157,35 +121,7 @@ export default function FieldsPanel({ fields, onChange, content, draftId }: Fiel
           {/* Tags */}
           <div className="col-span-2 lg:col-span-6 flex flex-col gap-1">
             <label htmlFor="field-tags" className="text-xs font-medium text-gray-500 dark:text-gray-400">Tags</label>
-            <div className={`${inputCls} flex flex-wrap gap-1.5 min-h-9 h-auto py-1.5`}>
-              {fields.tags.map((tag) => (
-                <span
-                  key={tag}
-                  className="inline-flex items-center gap-1 px-2 py-0.5 text-xs rounded-full bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300"
-                >
-                  {tag}
-                  <button
-                    type="button"
-                    onClick={() => removeTag(tag)}
-                    className="hover:text-blue-900 dark:hover:text-blue-100"
-                  >
-                    ×
-                  </button>
-                </span>
-              ))}
-              <input
-                id="field-tags"
-                type="text"
-                inputMode="text"
-                enterKeyHint="done"
-                className="flex-1 min-w-24 bg-transparent outline-none text-sm text-gray-900 dark:text-gray-100 placeholder:text-gray-400"
-                value={tagInput}
-                onChange={(e) => setTagInput(e.target.value)}
-                onKeyDown={handleTagKeyDown}
-                onBlur={() => tagInput.trim() && addTag(tagInput)}
-                placeholder={fields.tags.length === 0 ? "輸入 tag，Enter 或逗號新增" : ""}
-              />
-            </div>
+            <TagsInput id="field-tags" tags={fields.tags} onChange={(tags) => set("tags", tags)} />
           </div>
 
           {/* pubDate */}
@@ -233,7 +169,7 @@ export default function FieldsPanel({ fields, onChange, content, draftId }: Fiel
                 className={fieldBtnCls}
                 onClick={() => setOgDialog("generate")}
                 disabled={!draftId || !fields.title.trim()}
-                title={!fields.title.trim() ? "請先填寫標題" : undefined}
+                title={fields.title.trim() ? undefined : "請先填寫標題"}
               >
                 生成 OG 圖
               </button>
@@ -241,7 +177,7 @@ export default function FieldsPanel({ fields, onChange, content, draftId }: Fiel
           </div>
 
           {/* 翻譯 */}
-          <TranslationButtons fields={fields} content={content} draftId={draftId} />
+          <TranslationButtons />
         </div>
       )}
 
@@ -249,17 +185,6 @@ export default function FieldsPanel({ fields, onChange, content, draftId }: Fiel
         open={ogDialog !== null}
         onOpenChange={(o) => !o && setOgDialog(null)}
         mode={ogDialog ?? "pick"}
-        draftId={draftId}
-        meta={{
-          title: fields.title,
-          description: fields.description,
-          date: fields.pubDate,
-          tags: fields.tags,
-        }}
-        onApply={(url) => {
-          set("ogImage", url);
-          setOgDialog(null);
-        }}
       />
     </div>
   );

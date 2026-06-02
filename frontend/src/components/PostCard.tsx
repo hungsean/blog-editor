@@ -10,6 +10,7 @@ import {
 } from "./ui/dialog";
 import { deleteDraft } from "../lib/api/drafts";
 import { syncFromGithub } from "../lib/api/github";
+import { useList } from "../contexts/ListContext";
 
 export interface Post {
     id: string;
@@ -23,12 +24,6 @@ export interface Post {
 
 interface PostCardProps {
     post: Post;
-    onDelete?: (id: string) => void;
-    /** 單篇 sync 成功後呼叫，讓列表重新載入以反映被覆蓋的內容。 */
-    onSynced?: () => void;
-    selectMode?: boolean;
-    selected?: boolean;
-    onToggleSelect?: (id: string) => void;
 }
 
 const STATUS_STYLES: Record<Post["status"], string> = {
@@ -37,7 +32,9 @@ const STATUS_STYLES: Record<Post["status"], string> = {
     pr_opened: "bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400",
 };
 
-export default function PostCard({ post, onDelete, onSynced, selectMode = false, selected = false, onToggleSelect }: PostCardProps) {
+export default function PostCard({ post }: Readonly<PostCardProps>) {
+    const { selectMode, selectedIds, toggleSelect, onDelete, onSynced } = useList();
+    const selected = selectedIds.has(post.id);
     const [, navigate] = useLocation();
     const [confirmOpen, setConfirmOpen] = useState(false);
     const [deleting, setDeleting] = useState(false);
@@ -91,73 +88,87 @@ export default function PostCard({ post, onDelete, onSynced, selectMode = false,
         }
     };
 
+    const checkboxId = `post-select-${post.id}`;
+    // 選取模式下整列可點：改用原生 <label> 關聯 checkbox，讓鍵盤／觸控／滑鼠都能原生操作，
+    // 避免在 <div> 上掛 onClick 形成不可及（inaccessible）的互動元素（SonarLint S6848）。
+    const selectedClass = selected ? " bg-blue-50 dark:bg-blue-950/30" : "";
+    const modeClass = selectMode
+        ? "cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-950/30" + selectedClass
+        : "flex-col sm:flex-row hover:bg-gray-50 dark:hover:bg-gray-900";
+    const rowClass = `flex items-stretch gap-3 sm:gap-4 px-6 py-4 bg-white dark:bg-gray-950 border-b border-gray-100 dark:border-gray-800 transition-colors ${modeClass}`;
+
+    const rowContent = (
+        <>
+            {selectMode && (
+                <div className="flex items-center shrink-0">
+                    <input
+                        id={checkboxId}
+                        type="checkbox"
+                        checked={selected}
+                        onChange={() => toggleSelect(post.id)}
+                        className="w-4 h-4 rounded accent-blue-600"
+                    />
+                </div>
+            )}
+
+            {/* Information area */}
+            <div className="flex-1 min-w-0 flex flex-col gap-1">
+                <div className="flex items-center gap-2">
+                    <h2 className="text-base font-medium text-gray-900 dark:text-gray-100 truncate">
+                        {post.title}
+                    </h2>
+                    <span className={`shrink-0 text-xs font-medium px-2 py-0.5 rounded-full ${STATUS_STYLES[post.status]}`}>
+                        {post.status}
+                    </span>
+                </div>
+                <div className="flex items-center gap-3 text-sm text-gray-400 dark:text-gray-500">
+                    <span className="truncate">{post.slug}</span>
+                    <span className="shrink-0">·</span>
+                    <span className="shrink-0">{post.lang.toUpperCase()}</span>
+                    <span className="shrink-0">·</span>
+                    <span className="shrink-0">{post.pubDate}</span>
+                </div>
+            </div>
+
+            {/* Button area */}
+            {!selectMode && (
+                <div className="flex items-center justify-end gap-2 shrink-0">
+                    {post.status === "published" && (
+                        <button
+                            onClick={() => setSyncConfirmOpen(true)}
+                            className="px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
+                        >
+                            Sync
+                        </button>
+                    )}
+                    <button
+                        onClick={() => handleEdit(post)}
+                        className="px-3 py-1.5 text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"
+                    >
+                        Edit
+                    </button>
+                    <button
+                        onClick={() => setConfirmOpen(true)}
+                        className="px-3 py-1.5 text-sm font-medium text-red-500 dark:text-red-400 hover:text-red-600 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-md transition-colors"
+                    >
+                        Delete
+                    </button>
+                </div>
+            )}
+        </>
+    );
+
     return (
         <>
-            <div
-                className={`flex items-stretch gap-3 sm:gap-4 px-6 py-4 bg-white dark:bg-gray-950 border-b border-gray-100 dark:border-gray-800 transition-colors ${
-                    selectMode
-                        ? "cursor-pointer hover:bg-blue-50 dark:hover:bg-blue-950/30" + (selected ? " bg-blue-50 dark:bg-blue-950/30" : "")
-                        : "flex-col sm:flex-row hover:bg-gray-50 dark:hover:bg-gray-900"
-                }`}
-                onClick={selectMode ? () => onToggleSelect?.(post.id) : undefined}
-            >
-                {selectMode && (
-                    <div className="flex items-center shrink-0">
-                        <input
-                            type="checkbox"
-                            checked={selected}
-                            onChange={() => onToggleSelect?.(post.id)}
-                            onClick={(e) => e.stopPropagation()}
-                            className="w-4 h-4 rounded accent-blue-600"
-                        />
-                    </div>
-                )}
-
-                {/* Information area */}
-                <div className="flex-1 min-w-0 flex flex-col gap-1">
-                    <div className="flex items-center gap-2">
-                        <h2 className="text-base font-medium text-gray-900 dark:text-gray-100 truncate">
-                            {post.title}
-                        </h2>
-                        <span className={`shrink-0 text-xs font-medium px-2 py-0.5 rounded-full ${STATUS_STYLES[post.status]}`}>
-                            {post.status}
-                        </span>
-                    </div>
-                    <div className="flex items-center gap-3 text-sm text-gray-400 dark:text-gray-500">
-                        <span className="truncate">{post.slug}</span>
-                        <span className="shrink-0">·</span>
-                        <span className="shrink-0">{post.lang.toUpperCase()}</span>
-                        <span className="shrink-0">·</span>
-                        <span className="shrink-0">{post.pubDate}</span>
-                    </div>
+            {selectMode ? (
+                <label className={rowClass} htmlFor={checkboxId}>
+                    {rowContent}
+                </label>
+            ) : (
+                <div className={rowClass}>
+                    {rowContent}
                 </div>
-
-                {/* Button area */}
-                {!selectMode && (
-                    <div className="flex items-center justify-end gap-2 shrink-0">
-                        {post.status === "published" && (
-                            <button
-                                onClick={() => setSyncConfirmOpen(true)}
-                                className="px-3 py-1.5 text-sm font-medium text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-md transition-colors"
-                            >
-                                Sync
-                            </button>
-                        )}
-                        <button
-                            onClick={() => handleEdit(post)}
-                            className="px-3 py-1.5 text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-md transition-colors"
-                        >
-                            Edit
-                        </button>
-                        <button
-                            onClick={() => setConfirmOpen(true)}
-                            className="px-3 py-1.5 text-sm font-medium text-red-500 dark:text-red-400 hover:text-red-600 dark:hover:text-red-300 hover:bg-red-50 dark:hover:bg-red-900/30 rounded-md transition-colors"
-                        >
-                            Delete
-                        </button>
-                    </div>
-                )}
-            </div>
+            )}
 
             <Dialog open={syncConfirmOpen} onOpenChange={handleSyncOpenChange}>
                 <DialogContent showCloseButton={!syncing}>

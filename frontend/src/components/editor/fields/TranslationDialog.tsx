@@ -9,22 +9,18 @@ import {
   DialogDescription,
   DialogFooter,
   DialogClose,
-} from "../ui/dialog";
-import { Button } from "../ui/button";
-import { createDraft } from "../../lib/api/drafts";
-import { translateContent } from "../../lib/api/translation";
-import { langLabel } from "../../lib/langs";
-import type { FieldValues } from "./FieldsPanel";
+} from "../../ui/dialog";
+import { Button } from "../../ui/button";
+import { createDraft } from "../../../lib/api/drafts";
+import { translateContent } from "../../../lib/api/translation";
+import { langLabel } from "../../../lib/langs";
+import { useEditor } from "../../../contexts/EditorContext";
 
 interface TranslationDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   /** 翻譯目標語言代碼。 */
   targetLang: string;
-  /** 來源草稿的 frontmatter 欄位。 */
-  fields: FieldValues;
-  /** 來源草稿的正文。 */
-  content: string;
 }
 
 type Status = "confirm" | "translating" | "error";
@@ -41,9 +37,8 @@ export default function TranslationDialog({
   open,
   onOpenChange,
   targetLang,
-  fields,
-  content,
-}: TranslationDialogProps) {
+}: Readonly<TranslationDialogProps>) {
+  const { fields, content } = useEditor();
   const [, navigate] = useLocation();
   const [status, setStatus] = useState<Status>("confirm");
   const [error, setError] = useState<string | null>(null);

@@ -7,7 +7,7 @@ interface AddPresetFormProps {
     onCancel: () => void;
 }
 
-export default function AddPresetForm({ onCreated, onCancel }: AddPresetFormProps) {
+export default function AddPresetForm({ onCreated, onCancel }: Readonly<AddPresetFormProps>) {
     async function handleSubmit(values: PresetFormValues) {
         const filteredTranslations = Object.fromEntries(
             Object.entries(values.translations).filter(([, v]) => v.trim())

@@ -1,6 +1,12 @@
 import { Hono } from "hono";
 import { nanoid } from "nanoid";
 import { db } from "../lib/db";
+import {
+  listSyncedGithubPaths,
+  getDraftByGithubPath,
+  createDraft,
+  updateDraft,
+} from "../lib/repos/drafts";
 import { getGithubFile, listGithubPosts } from "../lib/github";
 import { parseFrontmatter, frontmatterToDraft, extractFromPath } from "../lib/frontmatter";
 
@@ -10,10 +16,7 @@ const github = new Hono();
 github.get("/github/posts", async (c) => {
   try {
     const posts = await listGithubPosts();
-    const syncedPaths = new Set(
-      (db.query("SELECT github_path FROM drafts WHERE github_path != ''").all() as { github_path: string }[])
-        .map((r) => r.github_path)
-    );
+    const syncedPaths = new Set(await listSyncedGithubPaths(db));
     return c.json(posts.map((p) => ({ ...p, synced: syncedPaths.has(p.path) })));
   } catch (err) {
     return c.json({ error: String(err) }, 500);
@@ -40,20 +43,21 @@ github.post("/github/sync", async (c) => {
       const { lang, slug } = extractFromPath(path);
       const now = new Date().toISOString();
 
-      const existing = db.query("SELECT id, github_sha FROM drafts WHERE github_path = ?").get(path) as { id: string; github_sha: string } | null;
+      const existing = await getDraftByGithubPath(db, path);
 
       if (existing) {
         if (!force && existing.github_sha === sha) continue;
-        db.query(
-          `UPDATE drafts SET title=?, lang=?, slug=?, description=?, tags=?, fields=?, content=?, github_sha=?, updated_at=? WHERE id=?`
-        ).run(title, lang, slug, description, tags, fields, mdBody, sha, now, existing.id);
+        await updateDraft(db, existing.id, {
+          title, lang, slug, description, tags, fields, content: mdBody, github_sha: sha, updated_at: now,
+        });
         updated.push(path);
       } else {
-        const newId = nanoid();
-        db.query(
-          `INSERT INTO drafts (id, title, lang, slug, description, tags, fields, content, status, pr_url, github_path, github_sha, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'published', '', ?, ?, ?, ?)`
-        ).run(newId, title, lang, slug, description, tags, fields, mdBody, path, sha, now, now);
+        await createDraft(db, {
+          id: nanoid(),
+          title, lang, slug, description, tags, fields, content: mdBody,
+          status: "published", pr_url: "", github_path: path, github_sha: sha,
+          created_at: now, updated_at: now,
+        });
         imported.push(path);
       }
     } catch (err) {

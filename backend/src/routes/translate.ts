@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { db } from "../lib/db";
+import { listPresets } from "../lib/repos/presets";
 import { translateDraft, isTranslationEnabled } from "../lib/translator";
-import type { TranslationPreset } from "../types";
 
 const translate = new Hono();
 
@@ -30,7 +30,7 @@ translate.post("/translation", async (c) => {
   }
 
   try {
-    const allPresets = db.query("SELECT * FROM translation_presets").all() as TranslationPreset[];
+    const allPresets = await listPresets(db);
     const textToSearch = [title, description, content].join(" ").toLowerCase();
     const relevantPresets = allPresets
       .map((p) => ({

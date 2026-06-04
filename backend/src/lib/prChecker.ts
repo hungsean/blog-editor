@@ -15,18 +15,17 @@
  * 標成同一個檔案，污染 DB。沒有 `github_path` 的舊資料才退回抓第一個 .md。
  */
 import { db } from "./db";
+import {
+  listPrOpenedDrafts,
+  listSyncableDrafts,
+  findSlugConflictBrief,
+  updateDraft,
+} from "./repos/drafts";
 import { getPR, getPRFiles, getFileSha, GITHUB_DEFAULT_BRANCH, type PRFile } from "./github";
 
 const INTERVAL_MS = Number(process.env.PR_CHECK_INTERVAL_MS ?? 60_000);
 const DEV = process.env.NODE_ENV !== "production";
 const devLog = (...args: unknown[]) => DEV && console.log(...args);
-
-type PrOpenedDraft = {
-  id: string;
-  title: string;
-  pr_url: string;
-  github_path: string;
-};
 
 /** PR 內屬於部落格文章、且非刪除狀態的 .md 檔案。 */
 function isBlogMd(f: PRFile): boolean {
@@ -37,14 +36,6 @@ function isBlogMd(f: PRFile): boolean {
   );
 }
 
-type LocalDraft = {
-  id: string;
-  title: string;
-  lang: string;
-  slug: string;
-  github_path: string;
-};
-
 function extractPrNumber(prUrl: string): number | null {
   const match = prUrl.match(/\/pull\/(\d+)$/);
   return match ? Number(match[1]) : null;
@@ -52,9 +43,7 @@ function extractPrNumber(prUrl: string): number | null {
 
 async function checkOnce() {
   devLog(`[prChecker] 開始檢查 pr_opened 文章...`);
-  const drafts = db
-    .query("SELECT id, title, pr_url, github_path FROM drafts WHERE status = 'pr_opened' AND pr_url != ''")
-    .all() as PrOpenedDraft[];
+  const drafts = await listPrOpenedDrafts(db);
 
   if (drafts.length === 0) {
     devLog(`[prChecker] 無待檢查的 pr_opened 文章`);
@@ -76,16 +65,14 @@ async function checkOnce() {
 
       if (pr.state === "closed" && !pr.merged) {
         const now = new Date().toISOString();
-        db.query("UPDATE drafts SET status = 'draft', pr_url = '', updated_at = ? WHERE id = ?")
-          .run(now, draft.id);
+        await updateDraft(db, draft.id, { status: "draft", pr_url: "", updated_at: now });
         console.log(`[prChecker] "${draft.title}" PR #${prNumber} 已關閉未合併，退回草稿`);
         continue;
       }
 
       if (pr.merged && pr.base.ref !== GITHUB_DEFAULT_BRANCH) {
         const now = new Date().toISOString();
-        db.query("UPDATE drafts SET status = 'draft', pr_url = '', updated_at = ? WHERE id = ?")
-          .run(now, draft.id);
+        await updateDraft(db, draft.id, { status: "draft", pr_url: "", updated_at: now });
         console.log(`[prChecker] "${draft.title}" PR #${prNumber} 合併至 ${pr.base.ref} 而非 ${GITHUB_DEFAULT_BRANCH}，退回草稿`);
         continue;
       }
@@ -110,12 +97,10 @@ async function checkOnce() {
 
       const now = new Date().toISOString();
 
-      db.query(
-        `UPDATE drafts
-         SET status = 'published', pr_url = '',
-             github_path = ?, github_sha = ?, updated_at = ?
-         WHERE id = ?`
-      ).run(mdFile.filename, mdFile.sha, now, draft.id);
+      await updateDraft(db, draft.id, {
+        status: "published", pr_url: "",
+        github_path: mdFile.filename, github_sha: mdFile.sha, updated_at: now,
+      });
 
       console.log(`[prChecker] "${draft.title}" PR #${prNumber} 已合併，標記為 published`);
     } catch (err) {
@@ -126,11 +111,7 @@ async function checkOnce() {
 
 async function checkDraftsExistOnGithub() {
   devLog(`[prChecker] 開始同步 draft 文章...`);
-  const drafts = db
-    .query(
-      "SELECT id, title, lang, slug, github_path FROM drafts WHERE status = 'draft' AND TRIM(slug) != '' AND lang != ''"
-    )
-    .all() as LocalDraft[];
+  const drafts = await listSyncableDrafts(db);
 
   if (drafts.length === 0) {
     devLog(`[prChecker] 無待同步的 draft 文章`);
@@ -139,14 +120,12 @@ async function checkDraftsExistOnGithub() {
   devLog(`[prChecker] 找到 ${drafts.length} 篇待同步 draft 文章`);
 
   for (const draft of drafts) {
-    const slug = draft.slug.trim();
+    const slug = (draft.slug ?? "").trim();
     const path = `src/content/blog/${draft.lang}/${slug}.md`;
     devLog(`[prChecker] 檢查遠端是否存在 "${draft.title}" (${path})...`);
     try {
       const sha = await getFileSha(path);
-      const slugConflict = db.query(
-        "SELECT id, title FROM drafts WHERE lang = ? AND TRIM(slug) = ? AND id != ? LIMIT 1"
-      ).get(draft.lang, slug, draft.id) as { id: string; title: string } | null;
+      const slugConflict = await findSlugConflictBrief(db, draft.lang, slug, draft.id);
 
       if (slugConflict && draft.github_path !== path) {
         console.warn(
@@ -156,19 +135,14 @@ async function checkDraftsExistOnGithub() {
       }
 
       const now = new Date().toISOString();
-      db.query(
-        `UPDATE drafts
-         SET status = 'published',
-             github_path = ?, github_sha = ?, updated_at = ?
-         WHERE id = ?`
-      ).run(path, sha, now, draft.id);
+      await updateDraft(db, draft.id, {
+        status: "published", github_path: path, github_sha: sha, updated_at: now,
+      });
       console.log(`[prChecker] "${draft.title}" 在遠端已存在，標記為 published`);
     } catch {
       // 404 = 遠端尚無此檔案，清空 github_path / sha 確保狀態乾淨
       const now = new Date().toISOString();
-      db.query(
-        `UPDATE drafts SET github_path = '', github_sha = '', updated_at = ? WHERE id = ?`
-      ).run(now, draft.id);
+      await updateDraft(db, draft.id, { github_path: "", github_sha: "", updated_at: now });
       devLog(`[prChecker] "${draft.title}" 遠端尚無此檔案，清空 github_path/sha`);
     }
   }

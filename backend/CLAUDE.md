@@ -21,9 +21,14 @@ bun run start # bun index.ts
 
 ```
 src/
-├── types.ts           # 共用型別：Draft、TranslationPreset
+├── types.ts           # 共用型別：Draft、TranslationPreset（再匯出 lib/schema 的推導型別）
 ├── lib/
-│   ├── db.ts          # SQLite 初始化與 migrations（Bun 啟動時執行，top-level await）
+│   ├── db.ts          # Drizzle 實例（bun-sqlite）+ 建表/migrations + DrizzleDB 型別（top-level await）
+│   ├── schema.ts      # Drizzle table 定義（drafts / translation_presets / images）與推導型別
+│   ├── repos/         # 資料存取層（repository 風格，純函數，db 為第一參數）
+│   │   ├── drafts.ts  # drafts 的 CRUD / slug 衝突 / batch / prChecker 查詢
+│   │   ├── presets.ts # translation_presets 的 CRUD
+│   │   └── images.ts  # images 的 list / upsert / insert
 │   ├── frontmatter.ts # Markdown frontmatter 解析與轉換（純函式，無 side effect）
 │   ├── github.ts      # GitHub REST API 封裝：讀取文章、開 PR
 │   ├── ogImage.ts     # Satori OG 圖片生成
@@ -45,18 +50,27 @@ src/
 ### 模組依賴關係
 
 ```
-drafts.ts  → db.ts, github.ts, frontmatter.ts, slugify.ts
-slug.ts    → db.ts
-github.ts (routes) → db.ts, lib/github.ts, frontmatter.ts
-translate.ts → db.ts, translator.ts
+drafts.ts  → db.ts, repos/drafts, github.ts, frontmatter.ts, slugify.ts
+slug.ts    → db.ts, repos/drafts
+github.ts (routes) → db.ts, repos/drafts, lib/github.ts, frontmatter.ts
+translate.ts → db.ts, repos/presets, translator.ts
 upload.ts  → r2.ts
-images.ts  → db.ts, r2.ts
-presets.ts → db.ts
-github.ts  → frontmatter.ts（呼叫端解析，github 本身不依賴）
+images.ts  → db.ts, repos/images, r2.ts
+presets.ts → db.ts, repos/presets
+prChecker.ts → db.ts, repos/drafts, lib/github.ts
+repos/*    → schema.ts（只 import table 定義與型別，不 import db 單例）
 ```
 
 ### 關鍵設計決策
 
+- **DB 存取分層（#01）**：所有 SQL / Drizzle query 都集中在 `lib/repos/`，route 與 prChecker
+  只呼叫具名 repo 函數，不自組 query。route 不 import `schema.ts`。
+- **DB 注入契約**：repo 函數一律 `(db, ...)` 簽章，`db` 由呼叫端傳入；repo 檔不 import db 單例。
+  為 #02（D1 driver，request/env scoped）鋪路——換 driver 時只改「db 怎麼來」，repo 不動。
+- **async 約定**：`drizzle-orm/bun-sqlite` 同時有 sync/async API，但本專案一律用 `await`，
+  讓同一份 query code 之後能直接套用只有 async 的 `drizzle-orm/d1`。
+- **schema 欄位 nullable**：建表 DDL 仍由 `db.ts` 的 raw SQL 負責（migration 行為不變）；
+  `schema.ts` 對有 DEFAULT 的欄位標 `.notNull().default()`，讓推導型別為非空字串、insert 仍可省略。
 - **slug 策略**：lang 編碼在目錄路徑中（`src/content/blog/{lang}/{slug}.md`），frontmatter 內不存 lang
 - **extra fields**：不在 schema 內的 frontmatter 欄位一律存入 `fields`（JSON 字串），保持彈性
 - **GitHub 寫入**：使用低階 Git Object API（blob → tree → commit → ref），避免 Contents API 的單檔限制

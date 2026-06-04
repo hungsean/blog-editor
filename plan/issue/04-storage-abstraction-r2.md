@@ -39,13 +39,23 @@ aws-sdk 更輕。需要把「物件儲存」與「暫存」抽象成介面，兩
 
 ## 實作步驟
 
+### 共用步驟（兩條路徑都要做）
+
 1. 定義 `Storage` 介面與 `isEnabled()`。
 2. `S3Storage`：包現有 aws-sdk 邏輯（`PutObjectCommand` / `ListObjectsV2Command`）。
 3. `R2Storage`：用 binding；`publicUrl` 走 `R2_PUBLIC_URL` 或自訂 domain。
 4. 由 #03 的 env provider 決定注入哪個實作（依 binding 是否存在）。
-5. 暫存檔：`upload/temp` 改成把 bytes `put` 到 `tmp/{token}` key；`:token` 改成 `get`；
-   過期清理改用 key 前綴掃描或 lifecycle rule（R2 可設 object lifecycle）。
-6. 移除 `data/og-temp/` 相關 `mkdir` / `unlink` / `readdir`。
+5. `images.ts`（`/images/sync` list、`/images/upload` put）、`og.ts`（`/og/upload`）改走 Storage。
+
+### 路徑甲：刪除 `upload.ts`（**預設**，前端無 caller）
+
+6a. 直接刪除 `src/routes/upload.ts` 與 `api.ts` 對它的 mount，連同 `data/og-temp/` 的
+    `mkdir`/`unlink`/`readdir`/`Bun.file` 全部移除。**不需要把暫存檔搬上 Storage**。
+
+### 路徑乙：保留 `/upload/temp`（**僅當確認有外部 caller**）
+
+6b. 才需要：`upload/temp` 改成把 bytes `put` 到 `tmp/{token}` key；`:token` 改成 `get`；
+    過期清理改用 key 前綴掃描或 R2 object lifecycle rule；移除本地 `node:fs` 暫存。
 
 ## 注意 / 地雷
 

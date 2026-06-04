@@ -10,8 +10,9 @@
 要達成這點，核心策略是：
 
 1. **DB 用 Drizzle ORM 抽象** — 同一份 schema 與 query，靠不同 driver
-   （`drizzle-orm/bun-sqlite` vs `drizzle-orm/d1`）對應兩種環境。這也順便解決了
-   「`bun:sqlite` 同步 / D1 非同步」的改寫問題——Drizzle 統一成 async API。
+   （`drizzle-orm/bun-sqlite` vs `drizzle-orm/d1`）對應兩種環境。為了讓兩種 driver 共用同一
+   份 query（`d1` 只有 async），**專案約定一律用 async 寫法（`await`）**——這是撰寫約定，
+   不是 Drizzle 自動把同步轉非同步（`bun-sqlite` 本身 sync/async 都提供）。
 2. **Runtime 行為抽象** — R2 儲存、定時任務、環境變數讀取，各包一層介面，
    依環境注入不同實作。
 3. **Hono 是中立框架** — 同一個 `app` 既能 `Bun.serve` 也能當 Workers 的 fetch handler。

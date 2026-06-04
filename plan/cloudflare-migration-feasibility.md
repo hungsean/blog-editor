@@ -41,13 +41,18 @@
 Pages 天生就是給這種 Vite SPA 用的：
 
 1. 直接連 GitHub repo，build command 設 `cd frontend && bun install && bun run build`，輸出目錄 `frontend/dist`。
-2. `/api` 的代理改用 **Pages Functions 的 `_routes.json`** 或設一條 rewrite，把 `/api/*` 轉發到 Workers（或讓前端直接打 Workers 的 custom domain）。
+2. `/api` 轉發到 Worker 需要 **Pages Function（`functions/api/[[path]].ts`）+ Service binding +
+   `_routes.json`** 三件套。注意 **`_routes.json` 只控制哪些路徑觸發 Function、不負責 rewrite**；
+   實際轉發是 Function 內 `context.env.API.fetch(context.request)`。詳見
+   [`issue/08-frontend-pages-deploy.md`](./issue/08-frontend-pages-deploy.md)。
 3. SPA fallback（所有路由回 `index.html`）Pages 內建支援，不需要像 nginx 那樣手寫 `try_files`。
 
 ### 要注意的小地方
 
-- 目前 `VITE_API_URL` 的注入方式可以沿用，但建議遷移後讓前端與 Worker **同源**（同一個 domain 下 `/api` 走 Pages → Worker binding），就能完全免掉 CORS 設定（`index.ts` 裡那段 CORS 邏輯在同源下不會觸發）。
-- nginx.conf 與 frontend 的 Dockerfile 遷移後可以退役。
+- 目前 `VITE_API_URL` 的注入方式可以沿用，建議讓前端與 Worker **同源**（Pages Function 同域
+  轉發到 Worker），就能免掉 CORS（`index.ts` 那段 CORS 在同源下不觸發）。
+- nginx.conf 與 frontend Dockerfile 是 **保留的 self-host 路徑**，不退役；Cloudflare 路徑改用
+  Pages，兩者並存。
 
 ---
 
@@ -113,7 +118,10 @@ endpoint。**尚未遷移**。
 
 `src/routes/upload.ts` 用 `Bun.file` / `Bun.write` / `node:fs` 把 OG 暫存檔寫到 `OG_TEMP_DIR`。Workers 無檔案系統。
 
-**解法**：暫存檔改放 **R2**（或短 TTL 的 **KV**）。若 OG 已移前端，`/upload/temp` 可能也能一併退役，需確認前端是否還呼叫。
+**解法（已查證）**：前端目前 **無人呼叫 `/upload/r2`、`/upload/temp`**（只用 `/images/upload`
+與 `/og/*`），故 **預設直接刪除 `upload.ts`**，連同 `node:fs` 暫存邏輯一併移除，Worker 不必做
+相容層。僅當確認有外部 caller 才改走 R2 / 短 TTL KV。詳見
+[`issue/04-storage-abstraction-r2.md`](./issue/04-storage-abstraction-r2.md)。
 
 #### 🟢 阻礙 E（其實是升級）— R2 改用原生 binding
 

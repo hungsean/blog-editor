@@ -20,7 +20,10 @@ SQLite 資料搬進 D1，並完成 Worker 的首次部署。
    - R2 bucket（若沿用現有 R2 帳號，建立 binding 指向同 bucket）。
 2. **wrangler.toml**
    - `[[d1_databases]]` binding `DB`、`[[r2_buckets]]` binding `BUCKET`、`[triggers] crons`（#05）。
-   - `main = "src/worker.ts"`、`compatibility_date`、`compatibility_flags = ["nodejs_compat"]`（視相依而定）。
+   - `main = "src/worker.ts"`、`compatibility_date`、`compatibility_flags = ["nodejs_compat"]`
+     （**必開，非「視相依而定」**）。原因：`src/lib/github.ts:87` 與 `:139` 用 `Buffer.from`
+     做 base64，Worker 不開 `nodejs_compat` 會直接壞。本 plan 採「開 `nodejs_compat`」路徑而
+     **不**改寫成 Web API；因此 `nodejs_compat` 是硬性需求，並須在驗收項實測 GitHub sync/publish。
 3. **secrets**（`wrangler secret put`）
    - `GITHUB_TOKEN`、`OPENAI_API_KEY`，其餘非敏感設定走 `[vars]`：
      `GITHUB_OWNER` / `GITHUB_REPO` / `GITHUB_DEFAULT_BRANCH` / `OPENAI_MODEL` /
@@ -46,4 +49,6 @@ SQLite 資料搬進 D1，並完成 Worker 的首次部署。
 - [ ] D1 / R2 binding、secrets、cron 都設定完成。
 - [ ] D1 schema 由 migration 建立，既有草稿 / presets / images 資料完整匯入。
 - [ ] `wrangler deploy` 後，線上 Worker 的 drafts / OG / 上傳 / 翻譯 / Cron 全部正常。
+- [ ] `nodejs_compat` 已開啟，並在線上 Worker **實測 GitHub sync 與 publish 成功**
+      （`github.ts` 的 `Buffer.from` base64 路徑在 Worker 上不報錯）。
 - [ ] self-host 仍可用（資料來源各自獨立，互不影響）。

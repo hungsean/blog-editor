@@ -46,6 +46,12 @@ Worker，並完成整體部署文件與 self-host 路徑的保留。
 
       （參考：Pages Functions routing <https://developers.cloudflare.com/pages/functions/routing/>）
 
+   > ⚠️ **path 不可 rewrite**：`context.env.API.fetch(context.request)` 會原樣保留
+   > `/api/...` path。因此 **Worker entry（`worker.ts`）必須在 `/api` 下掛載 router**，
+   > 與現有 `backend/index.ts:23` 的 `app.route("/api", api)` 一致。#03 抽出的 `src/app.ts`
+   > 也必須維持 `/api` mount，**不可改成只 mount api root**，否則 Pages 轉發進來的
+   > `/api/*` 在 Worker 上全變 404。Pages Function 端不做任何 path 改寫。
+
    前端維持相對路徑（`VITE_API_URL` 留空）即同源，無 CORS。
    備案：前端直打 Worker 的 custom domain（需在 #03 env provider 放行 CORS，較不推薦）。
 3. **環境變數**：Pages 上 `VITE_API_URL` 留空走同源；保留 `.env.example` 給 self-host。
@@ -66,6 +72,8 @@ Worker，並完成整體部署文件與 self-host 路徑的保留。
 
 - [ ] 前端在 Pages 上線，路由 / 重整 / 深連結正常（SPA fallback）。
 - [ ] `functions/api/[[path]].ts` + Service binding + `_routes.json` 三者就位，`/api/*` 正確轉發到 Worker。
+- [ ] Worker entry 接受 `/api/*`（`app.route("/api", api)` 保留），Pages Function 不做 path rewrite；
+      實測 `/api/drafts` 之類路徑經 Pages 轉發到 Worker 回 200，非 404。
 - [ ] `/api` 同源，瀏覽器無 CORS 錯誤。
 - [ ] self-host（docker compose）仍能完整跑起來。
 - [ ] README 同時說明 self-host 與 Cloudflare 兩種部署。

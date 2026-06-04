@@ -60,6 +60,18 @@ Phase C — 前端
 - [ ] 一份 README 說明兩種部署方式與所需環境變數 / binding。
 - [ ] 既有 SQLite 資料能匯入 D1。
 
+## 人為決策（Handoff Notes，主人已拍板）
+
+實作前必讀，這幾項已由主人確認，**不需再問**：
+
+1. **Cloudflare 部署最低方案 = Workers Paid。** 已接受付費方案門檻；#06 的 OG 生成
+   即以 Workers Paid 的額度（CPU、bundle 10 MB）為前提評估，不嘗試硬塞 Free。
+2. **`/api/upload/r2`、`/api/upload/temp` 可直接刪除。** 已確認後端只有本專案前端使用，
+   前端無 caller，**無需保留任何外部相容層**。#04 走「刪除 `upload.ts`」這條預設路徑即可。
+3. **#06a spike 失敗時的優先 fallback = 前端生成 OG。** resvg-wasm on Workers 不可行時，
+   改由前端 canvas / satori 合成 OG PNG，再透過後端既有 upload/storage endpoint 存入 R2。
+   **不採**「OG 只在 self-host」或獨立服務方案。
+
 ## 相關文件
 
 - 可行性分析：[../cloudflare-migration-feasibility.md](../cloudflare-migration-feasibility.md)

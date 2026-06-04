@@ -16,17 +16,17 @@ aws-sdk 更輕。需要把「物件儲存」與「暫存」抽象成介面，兩
 - Cloudflare 實作：R2 binding（`env.BUCKET.put/get/list/delete`）。
 - 暫存檔（OG temp）從本地磁碟改走 Storage（短 TTL key），移除 `node:fs` 依賴。
 
-## 先確認：`upload.ts` 的 endpoint 可能已廢棄（review 點 7）
+## `upload.ts` 的 endpoint 已確認廢棄 → 直接刪除（主人已拍板）
 
 已查證前端（`frontend/src/`）目前只呼叫 **`/images/upload`** 與 **`/og/preview`、`/og/upload`**，
-**沒有任何 caller 打 `/upload/r2` 或 `/upload/temp`**。
+**沒有任何 caller 打 `/upload/r2` 或 `/upload/temp`**。主人已確認後端只有本專案前端使用，
+**無外部相容需求**。
 
-- 若無外部 / 第三方相容需求 → **直接刪除 `src/routes/upload.ts`（整個 `/upload/*`）**，
-  連帶 `OG_TEMP_DIR` 的 `node:fs` 暫存邏輯一起移除，Worker 不必再做相容層。這會讓本 issue
-  與 #06 都更乾淨（少一塊要去 fs 化的東西）。
-- 若確有外部 caller → 才走下面的「改走 Storage」路徑。
+→ **直接刪除 `src/routes/upload.ts`（整個 `/upload/*`）**，連帶 `OG_TEMP_DIR` 的 `node:fs`
+暫存邏輯一起移除，Worker 不必再做相容層。這會讓本 issue 與 #06 都更乾淨（少一塊要去 fs 化的東西）。
 
-**先做這個確認再決定範圍。** 以下影響檔案以「刪除 upload.ts」為預設。
+> 備註：若未來真的出現外部 caller 需要暫存上傳，再考慮下方「路徑乙」把暫存搬上 Storage；
+> 本次實作不走該分支。
 
 ## 影響檔案
 
@@ -61,9 +61,9 @@ aws-sdk 更輕。需要把「物件儲存」與「暫存」抽象成介面，兩
 6a. 直接刪除 `src/routes/upload.ts` 與 `api.ts` 對它的 mount，連同 `data/og-temp/` 的
     `mkdir`/`unlink`/`readdir`/`Bun.file` 全部移除。**不需要把暫存檔搬上 Storage**。
 
-### 路徑乙：保留 `/upload/temp`（**僅當確認有外部 caller**）
+### 路徑乙：保留 `/upload/temp`（**本次不採用，僅留作未來參考**）
 
-6b. 才需要：`upload/temp` 改成把 bytes `put` 到 `tmp/{token}` key；`:token` 改成 `get`；
+6b. 僅在未來出現外部 caller 時才需要：`upload/temp` 改成把 bytes `put` 到 `tmp/{token}` key；`:token` 改成 `get`；
     過期清理改用 key 前綴掃描或 R2 object lifecycle rule；移除本地 `node:fs` 暫存。
 
 ## 注意 / 地雷

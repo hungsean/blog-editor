@@ -34,8 +34,11 @@
 ## 實作步驟
 
 1. **重構 `prChecker.ts` → reconcile service**
-   - `checkOnce` / `checkDraftsExistOnGithub` 改成接收 `db`（context，呼應 #02/#03）與
+   - `checkOnce` / `checkDraftsExistOnGithub` 改成接收 `db`（呼應 #01 注入契約與 #02/#03）與
      `github` client（#03 的 `createGithub(env)` factory），不再 import 單例。
+   - **所有 DB 存取一律經 #01 的 repo 函數並把 `db` 傳入**（如 `listOpenPrDrafts(db)`、
+     `updateDraft(db, id, patch)`），prChecker 內**不得**自己寫 drizzle query builder / SQL；
+     若 reconcile 需要的查詢 repo 還沒有，就在對應 repo 檔新增具名函數。
    - export `runPrChecks(db, github, opts)` 同時跑兩個檢查，回傳結果摘要（更新了哪些）。
 2. **新增 endpoint**：`routes/github.ts` 加 `POST /github/reconcile`，呼叫 `runPrChecks`，回傳摘要。
 3. **self-host**：`startPRChecker(db, github)` 內 `setInterval(runPrChecks, INTERVAL_MS)`，於 `server.bun.ts` 呼叫。
@@ -86,4 +89,5 @@
 - [ ] **只有 404** 會清空 `github_path`/`github_sha`；token 失效 / rate limit / 故障保留原狀並回報。
 - [ ] Workers Cron 測試：啟動 `wrangler dev` 後
       `curl http://localhost:8787/cdn-cgi/handler/scheduled` 觸發並驗證。
-- [ ] prChecker 不再 import module 單例 db / client。
+- [ ] prChecker 不再 import module 單例 db / client；DB 一律經 `db` 參數 + repo 函數存取
+      （符合 #01 注入契約，無自寫 query builder）。

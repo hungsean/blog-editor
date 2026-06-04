@@ -14,7 +14,8 @@ aws-sdk 更輕。需要把「物件儲存」與「暫存」抽象成介面，兩
 - 定義 `Storage` 介面：`put(key, bytes, contentType)`、`get(key)`、`list(prefix)`、`delete(key)`、`publicUrl(key)`。
 - self-host 實作：`@aws-sdk/client-s3`（沿用現有 R2 S3 設定）。
 - Cloudflare 實作：R2 binding（`env.BUCKET.put/get/list/delete`）。
-- 暫存檔（OG temp）從本地磁碟改走 Storage（短 TTL key），移除 `node:fs` 依賴。
+- **刪除廢棄的 temp upload（`/upload/*`，主人已拍板）**，連同 `data/og-temp/` 的 `node:fs`
+  暫存邏輯一併移除；Storage 介面保留給 `images` 與 OG 上傳使用，不為已刪的 temp 做相容。
 
 ## `upload.ts` 的 endpoint 已確認廢棄 → 直接刪除（主人已拍板）
 

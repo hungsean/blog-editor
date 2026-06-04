@@ -37,3 +37,7 @@ docker compose up -d --build
 - 架構層級的決策分別記錄在 `frontend/CLAUDE.md` 和 `backend/CLAUDE.md`
 
 Before editing any file, read it first. Before modifying a function, grep for all callers. Research before you edit.  
+
+## issue planing
+
+- 如果正在issue planning狀態，請按照 `plan/issue-review-rules-planner.md` 來規劃

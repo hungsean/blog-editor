@@ -1,22 +1,29 @@
 /**
  * ## db
  *
- * SQLite 資料庫初始化與結構定義。
+ * SQLite 資料庫初始化與 production 共用單例。
  *
  * ### 資料流
- * 啟動時自動建立 DB → 建立 drafts 表格 → 執行欄位 migration → 建立 translation_presets 表格
+ * 啟動時建立資料目錄 → 開啟 DB 連線 → `applySchema()` 建表 / migration → export Drizzle 單例
  *
  * ### 已知限制
  * - 使用 top-level await 建立資料目錄，此模組只能在 Bun 環境中使用
- * - Migration 策略為 ALTER TABLE ADD COLUMN，僅支援新增欄位，不支援刪除或改型別
+ * - **import 此檔即有 side effect**（mkdir + 開啟 DB 檔），測試請改用 `makeTestDb()`，
+ *   勿為了拿建表邏輯而 import 此檔；建表 DDL 已抽到無 side effect 的 `applySchema.ts`
  * - DB 路徑預設為 `data/blog-editor.db`，可透過 `DB_PATH` 環境變數覆蓋；啟動時會以實際
  *   `DB_PATH` 建立父目錄，避免 Docker production 路徑與本機預設路徑不一致
+ *
+ * @remarks
+ * 建表 / migration 邏輯（原本寫死在本檔 top-level）自 #01.1 抽到 `applySchema.ts`，
+ * 讓 production 單例與測試的 `makeTestDb()` 共用同一份 DDL，避免漂移。抽離後本檔
+ * 的 side effect 順序維持不變：建目錄 → 開檔 → `applySchema` → export db。
  */
 import { Database } from "bun:sqlite";
 import { drizzle, type BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
 import { mkdir } from "fs/promises";
 import { dirname, join } from "path";
 import * as schema from "./schema";
+import { applySchema } from "./applySchema";
 
 const DB_PATH = process.env.DB_PATH ?? join(import.meta.dir, "../../data/blog-editor.db");
 const dataDir = dirname(DB_PATH);
@@ -37,56 +44,8 @@ const sqlite = new Database(DB_PATH, { create: true });
  */
 export type DrizzleDB = BunSQLiteDatabase<typeof schema>;
 
-sqlite.exec(`
-  CREATE TABLE IF NOT EXISTS drafts (
-    id          TEXT PRIMARY KEY,
-    title       TEXT NOT NULL DEFAULT '',
-    lang        TEXT NOT NULL DEFAULT 'zh-tw',
-    description TEXT DEFAULT '',
-    tags        TEXT DEFAULT '[]',
-    fields      TEXT DEFAULT '{}',
-    content     TEXT DEFAULT '',
-    status      TEXT NOT NULL DEFAULT 'draft',
-    pr_url      TEXT DEFAULT '',
-    created_at  TEXT NOT NULL,
-    updated_at  TEXT NOT NULL
-  )
-`);
-
-sqlite.exec(`
-  CREATE TABLE IF NOT EXISTS translation_presets (
-    id           TEXT PRIMARY KEY,
-    keywords     TEXT NOT NULL DEFAULT '[]',
-    translations TEXT NOT NULL DEFAULT '{}',
-    note         TEXT NOT NULL DEFAULT '',
-    created_at   TEXT NOT NULL,
-    updated_at   TEXT NOT NULL
-  )
-`);
-
-// 圖片庫：R2 物件的本地快取。
-// key 為 R2 物件鍵值（PRIMARY KEY），sync 與 upload 都以此 upsert。
-sqlite.exec(`
-  CREATE TABLE IF NOT EXISTS images (
-    key         TEXT PRIMARY KEY,
-    url         TEXT NOT NULL,
-    size        INTEGER NOT NULL DEFAULT 0,
-    uploaded_at TEXT NOT NULL
-  )
-`);
-
-// Migrations: add new columns if they don't exist
-for (const [col, def] of [
-  ["github_path", "TEXT DEFAULT ''"],
-  ["github_sha",  "TEXT DEFAULT ''"],
-  ["slug",        "TEXT DEFAULT ''"],
-] as const) {
-  try {
-    sqlite.exec(`ALTER TABLE drafts ADD COLUMN ${col} ${def}`);
-  } catch {
-    // Column already exists, ignore
-  }
-}
+// 建表 / migration 與測試共用單一來源（見 applySchema.ts）。
+applySchema(sqlite);
 
 /**
  * 全專案共用的 Drizzle 實例（self-host bun-sqlite 單例）。

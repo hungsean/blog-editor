@@ -2,6 +2,16 @@ import { Hono } from "hono";
 import { nanoid } from "nanoid";
 import { Document, visit } from "yaml";
 import { db } from "../lib/db";
+import {
+  listDrafts,
+  getDraftById,
+  createDraft,
+  updateDraft,
+  deleteDraft,
+  deleteDrafts,
+  findSlugConflict,
+  findSlugConflictExcludingIds,
+} from "../lib/repos/drafts";
 import { getGithubFile, openPR, openBatchPR } from "../lib/github";
 import { parseFrontmatter, frontmatterToDraft } from "../lib/frontmatter";
 import { slugify, isValidSlug, SLUG_PATTERN } from "../lib/slugify";
@@ -81,10 +91,8 @@ function expectedGithubPath(lang: string, slug: string): string {
 }
 
 // GET /api/drafts
-drafts.get("/drafts", (c) => {
-  const rows = db
-    .query("SELECT id, title, lang, slug, status, pr_url, github_path, github_sha, created_at, updated_at, fields FROM drafts ORDER BY DATE(json_extract(fields, '$.pubDate')) DESC, updated_at DESC")
-    .all() as Draft[];
+drafts.get("/drafts", async (c) => {
+  const rows = await listDrafts(db);
   return c.json(rows);
 });
 
@@ -101,23 +109,20 @@ drafts.post("/drafts", async (c) => {
   const id = nanoid();
   const body = await c.req.json().catch(() => ({})) as Partial<Draft>;
 
-  db.query(
-    `INSERT INTO drafts (id, title, lang, slug, description, tags, fields, content, status, pr_url, created_at, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft', '', ?, ?)`
-  ).run(
+  const draft = await createDraft(db, {
     id,
-    body.title ?? "",
-    body.lang ?? "zh-tw",
-    body.slug?.trim() ?? "",
-    body.description ?? "",
-    body.tags ?? "[]",
-    body.fields ?? JSON.stringify({ pubDate: now.slice(0, 10) }),
-    body.content ?? "",
-    now,
-    now
-  );
-
-  const draft = db.query("SELECT * FROM drafts WHERE id = ?").get(id) as Draft;
+    title: body.title ?? "",
+    lang: body.lang ?? "zh-tw",
+    slug: body.slug?.trim() ?? "",
+    description: body.description ?? "",
+    tags: body.tags ?? "[]",
+    fields: body.fields ?? JSON.stringify({ pubDate: now.slice(0, 10) }),
+    content: body.content ?? "",
+    status: "draft",
+    pr_url: "",
+    created_at: now,
+    updated_at: now,
+  });
   return c.json(draft, 201);
 });
 
@@ -128,8 +133,7 @@ drafts.post("/drafts/publish", async (c) => {
     return c.json({ error: "draftIds is required" }, 400);
   }
 
-  const draftList = body.draftIds
-    .map((id) => db.query("SELECT * FROM drafts WHERE id = ?").get(id) as Draft | null)
+  const draftList = (await Promise.all(body.draftIds.map((id) => getDraftById(db, id))))
     .filter((d): d is Draft => d !== null);
 
   if (draftList.length === 0) return c.json({ error: "No valid drafts found" }, 404);
@@ -161,13 +165,10 @@ drafts.post("/drafts/publish", async (c) => {
     });
 
   const batchIds = draftList.map((d) => d.id);
-  const placeholders = batchIds.map(() => "?").join(",");
   const dbConflicts: object[] = [];
   for (const { draft, slug } of resolved) {
     if (batchKeys.get(`${draft.lang}:${slug}`)!.length > 1) continue;
-    const conflict = db.query(
-      `SELECT id, title, lang, slug, status, github_path FROM drafts WHERE lang = ? AND TRIM(slug) = ? AND id NOT IN (${placeholders}) LIMIT 1`
-    ).get(draft.lang, slug, ...batchIds) as { id: string; title: string; lang: string; slug: string; status: string; github_path: string } | null;
+    const conflict = await findSlugConflictExcludingIds(db, draft.lang, slug, batchIds);
     if (conflict) {
       dbConflicts.push({ type: "existing_draft", lang: draft.lang, slug, draft: { id: draft.id, title: draft.title }, conflict });
     }
@@ -216,8 +217,9 @@ drafts.post("/drafts/publish", async (c) => {
       // 保存每篇 draft 的 resolved slug 與 expected path：批次 PR 內含多篇 .md，
       // prChecker 必須靠這個 path 精準對應，否則所有 draft 會被標成同一個檔案。
       const githubPath = draft.github_path || expectedGithubPath(draft.lang, slug);
-      db.query("UPDATE drafts SET status = 'pr_opened', pr_url = ?, slug = ?, github_path = ?, updated_at = ? WHERE id = ?")
-        .run(prUrl, slug, githubPath, now, draft.id);
+      await updateDraft(db, draft.id, {
+        status: "pr_opened", pr_url: prUrl, slug, github_path: githubPath, updated_at: now,
+      });
     }
     return c.json({ success: true, pr_url: prUrl, count: draftList.length });
   } catch (err) {
@@ -226,8 +228,8 @@ drafts.post("/drafts/publish", async (c) => {
 });
 
 // GET /api/drafts/:id
-drafts.get("/drafts/:id", (c) => {
-  const draft = db.query("SELECT * FROM drafts WHERE id = ?").get(c.req.param("id")) as Draft | null;
+drafts.get("/drafts/:id", async (c) => {
+  const draft = await getDraftById(db, c.req.param("id"));
   if (!draft) return c.json({ error: "Not found" }, 404);
   return c.json(draft);
 });
@@ -235,36 +237,22 @@ drafts.get("/drafts/:id", (c) => {
 // PATCH /api/drafts/:id
 drafts.patch("/drafts/:id", async (c) => {
   const id = c.req.param("id");
-  const existing = db.query("SELECT * FROM drafts WHERE id = ?").get(id) as Draft | null;
+  const existing = await getDraftById(db, id);
   if (!existing) return c.json({ error: "Not found" }, 404);
 
   const body = await c.req.json().catch(() => ({})) as Partial<Draft>;
   const now = new Date().toISOString();
 
-  db.query(
-    `UPDATE drafts SET
-      title       = ?,
-      lang        = ?,
-      slug        = ?,
-      description = ?,
-      tags        = ?,
-      fields      = ?,
-      content     = ?,
-      updated_at  = ?
-    WHERE id = ?`
-  ).run(
-    body.title       ?? existing.title,
-    body.lang        ?? existing.lang,
-    body.slug !== undefined ? body.slug.trim() : existing.slug,
-    body.description ?? existing.description,
-    body.tags        ?? existing.tags,
-    body.fields      ?? existing.fields,
-    body.content     ?? existing.content,
-    now,
-    id
-  );
-
-  const draft = db.query("SELECT * FROM drafts WHERE id = ?").get(id) as Draft;
+  const draft = await updateDraft(db, id, {
+    title:       body.title       ?? existing.title,
+    lang:        body.lang        ?? existing.lang,
+    slug:        body.slug !== undefined ? body.slug.trim() : existing.slug,
+    description: body.description ?? existing.description,
+    tags:        body.tags        ?? existing.tags,
+    fields:      body.fields      ?? existing.fields,
+    content:     body.content     ?? existing.content,
+    updated_at:  now,
+  });
   return c.json(draft);
 });
 
@@ -275,32 +263,22 @@ drafts.delete("/drafts", async (c) => {
     return c.json({ error: "draftIds is required" }, 400);
   }
 
-  const deleted: string[] = [];
-  for (const id of body.draftIds) {
-    const existing = db.query("SELECT id FROM drafts WHERE id = ?").get(id);
-    if (existing) {
-      db.query("DELETE FROM drafts WHERE id = ?").run(id);
-      deleted.push(id);
-    }
-  }
-
+  const deleted = await deleteDrafts(db, body.draftIds);
   return c.json({ success: true, deleted, count: deleted.length });
 });
 
 // DELETE /api/drafts/:id
-drafts.delete("/drafts/:id", (c) => {
+drafts.delete("/drafts/:id", async (c) => {
   const id = c.req.param("id");
-  const existing = db.query("SELECT id FROM drafts WHERE id = ?").get(id);
-  if (!existing) return c.json({ error: "Not found" }, 404);
-
-  db.query("DELETE FROM drafts WHERE id = ?").run(id);
+  const existed = await deleteDraft(db, id);
+  if (!existed) return c.json({ error: "Not found" }, 404);
   return c.json({ success: true });
 });
 
 // POST /api/drafts/:id/publish
 drafts.post("/drafts/:id/publish", async (c) => {
   const id = c.req.param("id");
-  const draft = db.query("SELECT * FROM drafts WHERE id = ?").get(id) as Draft | null;
+  const draft = await getDraftById(db, id);
   if (!draft) return c.json({ error: "Not found" }, 404);
 
   const { frontmatter, date, slug } = buildFrontmatter(draft);
@@ -313,9 +291,7 @@ drafts.post("/drafts/:id/publish", async (c) => {
     return c.json({ success: false, reason: "invalid", error: fieldError }, 400);
   }
 
-  const slugConflict = db.query(
-    "SELECT id, title, lang, slug, status, github_path FROM drafts WHERE lang = ? AND TRIM(slug) = ? AND id != ? LIMIT 1"
-  ).get(draft.lang, slug, id) as { id: string; title: string; lang: string; slug: string; status: string; github_path: string } | null;
+  const slugConflict = await findSlugConflict(db, draft.lang, slug, id);
   if (slugConflict) {
     return c.json({ success: false, reason: "conflict", error: "Slug already exists in this language", conflict: slugConflict }, 400);
   }
@@ -334,8 +310,9 @@ drafts.post("/drafts/:id/publish", async (c) => {
 
     // 寫回 resolved slug（可能來自 slugify fallback）與 expected path，
     // 讓列表顯示正確 slug、prChecker 能精準對應 PR 檔案。
-    db.query("UPDATE drafts SET status = 'pr_opened', pr_url = ?, slug = ?, github_path = ?, updated_at = ? WHERE id = ?")
-      .run(prUrl, slug, filePath, new Date().toISOString(), id);
+    await updateDraft(db, id, {
+      status: "pr_opened", pr_url: prUrl, slug, github_path: filePath, updated_at: new Date().toISOString(),
+    });
 
     return c.json({ success: true, pr_url: prUrl });
   } catch (err) {
@@ -346,7 +323,7 @@ drafts.post("/drafts/:id/publish", async (c) => {
 // POST /api/drafts/:id/resync
 drafts.post("/drafts/:id/resync", async (c) => {
   const id = c.req.param("id");
-  const draft = db.query("SELECT * FROM drafts WHERE id = ?").get(id) as Draft | null;
+  const draft = await getDraftById(db, id);
   if (!draft) return c.json({ error: "Not found" }, 404);
   if (!draft.github_path) return c.json({ error: "This draft has no GitHub source" }, 400);
 
@@ -356,11 +333,9 @@ drafts.post("/drafts/:id/resync", async (c) => {
     const { title, lang, description, tags, fields } = frontmatterToDraft(fm);
     const now = new Date().toISOString();
 
-    db.query(
-      `UPDATE drafts SET title=?, lang=?, description=?, tags=?, fields=?, content=?, github_sha=?, updated_at=? WHERE id=?`
-    ).run(title, lang, description, tags, fields, mdBody, sha, now, id);
-
-    const updated = db.query("SELECT * FROM drafts WHERE id = ?").get(id) as Draft;
+    const updated = await updateDraft(db, id, {
+      title, lang, description, tags, fields, content: mdBody, github_sha: sha, updated_at: now,
+    });
     return c.json(updated);
   } catch (err) {
     return c.json({ error: String(err) }, 500);

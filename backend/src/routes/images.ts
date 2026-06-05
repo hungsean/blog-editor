@@ -16,6 +16,7 @@
 import { Hono } from "hono";
 import { nanoid } from "nanoid";
 import { db } from "../lib/db";
+import { listImages, upsertImage, insertImage } from "../lib/repos/images";
 import { uploadToR2, listR2Objects, isR2Enabled } from "../lib/r2";
 
 /** 圖片在 R2 的存放前綴，與 upload route 的 `/upload/r2` 一致。 */
@@ -34,10 +35,8 @@ interface ImageRow {
 const images = new Hono();
 
 // GET /api/images — 列出圖片庫（純讀本地 DB，不碰 R2）
-images.get("/images", (c) => {
-  const rows = db
-    .query("SELECT key, url, size, uploaded_at FROM images ORDER BY uploaded_at DESC")
-    .all() as ImageRow[];
+images.get("/images", async (c) => {
+  const rows = await listImages(db);
   return c.json(rows);
 });
 
@@ -58,16 +57,16 @@ images.post("/images/sync", async (c) => {
     return c.json({ error: String(err) }, 500);
   }
 
-  const stmt = db.query(
-    `INSERT INTO images (key, url, size, uploaded_at) VALUES (?, ?, ?, ?)
-     ON CONFLICT(key) DO UPDATE SET url = excluded.url, size = excluded.size, uploaded_at = excluded.uploaded_at`
-  );
-
   let synced = 0;
   for (const obj of objects) {
     const ext = obj.key.split(".").pop()?.toLowerCase() ?? "";
     if (!IMAGE_EXT.has(ext)) continue;
-    stmt.run(obj.key, obj.url, obj.size, obj.lastModified);
+    await upsertImage(db, {
+      key: obj.key,
+      url: obj.url,
+      size: obj.size,
+      uploaded_at: obj.lastModified,
+    });
     synced++;
   }
 
@@ -97,12 +96,7 @@ images.post("/images/upload", async (c) => {
   try {
     const url = await uploadToR2(key, buffer, file.type || "application/octet-stream");
     const uploaded_at = new Date().toISOString();
-    db.query("INSERT INTO images (key, url, size, uploaded_at) VALUES (?, ?, ?, ?)").run(
-      key,
-      url,
-      file.size,
-      uploaded_at
-    );
+    await insertImage(db, { key, url, size: file.size, uploaded_at });
     return c.json({ key, url, size: file.size, uploaded_at } satisfies ImageRow);
   } catch (err) {
     return c.json({ error: String(err) }, 500);

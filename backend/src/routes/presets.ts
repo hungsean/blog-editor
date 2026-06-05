@@ -1,13 +1,19 @@
 import { Hono } from "hono";
 import { nanoid } from "nanoid";
 import { db } from "../lib/db";
-import type { TranslationPreset } from "../types";
+import {
+  listPresets,
+  getPresetById,
+  createPreset,
+  updatePreset,
+  deletePreset,
+} from "../lib/repos/presets";
 
 const presets = new Hono();
 
 // GET /api/presets
-presets.get("/presets", (c) => {
-  const rows = db.query("SELECT * FROM translation_presets ORDER BY updated_at DESC").all() as TranslationPreset[];
+presets.get("/presets", async (c) => {
+  const rows = await listPresets(db);
   return c.json(rows);
 });
 
@@ -22,25 +28,20 @@ presets.post("/presets", async (c) => {
     return c.json({ error: "keywords must be a non-empty array" }, 400);
   }
   const now = new Date().toISOString();
-  const id = nanoid();
-  db.query(
-    `INSERT INTO translation_presets (id, keywords, translations, note, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`
-  ).run(
-    id,
-    JSON.stringify(body.keywords),
-    JSON.stringify(body.translations ?? {}),
-    body.note ?? "",
-    now,
-    now,
-  );
-  const preset = db.query("SELECT * FROM translation_presets WHERE id = ?").get(id) as TranslationPreset;
+  const preset = await createPreset(db, {
+    id: nanoid(),
+    keywords: JSON.stringify(body.keywords),
+    translations: JSON.stringify(body.translations ?? {}),
+    note: body.note ?? "",
+    created_at: now,
+    updated_at: now,
+  });
   return c.json(preset, 201);
 });
 
 // GET /api/presets/:id
-presets.get("/presets/:id", (c) => {
-  const id = c.req.param("id");
-  const preset = db.query("SELECT * FROM translation_presets WHERE id = ?").get(id) as TranslationPreset | null;
+presets.get("/presets/:id", async (c) => {
+  const preset = await getPresetById(db, c.req.param("id"));
   if (!preset) return c.json({ error: "Not found" }, 404);
   return c.json(preset);
 });
@@ -48,7 +49,7 @@ presets.get("/presets/:id", (c) => {
 // PATCH /api/presets/:id
 presets.patch("/presets/:id", async (c) => {
   const id = c.req.param("id");
-  const existing = db.query("SELECT * FROM translation_presets WHERE id = ?").get(id) as TranslationPreset | null;
+  const existing = await getPresetById(db, id);
   if (!existing) return c.json({ error: "Not found" }, 404);
 
   const body = await c.req.json().catch(() => ({})) as {
@@ -61,20 +62,15 @@ presets.patch("/presets/:id", async (c) => {
   const note = body.note ?? existing.note;
   const now = new Date().toISOString();
 
-  db.query(
-    `UPDATE translation_presets SET keywords = ?, translations = ?, note = ?, updated_at = ? WHERE id = ?`
-  ).run(keywords, translations, note, now, id);
-
-  const preset = db.query("SELECT * FROM translation_presets WHERE id = ?").get(id) as TranslationPreset;
+  const preset = await updatePreset(db, id, { keywords, translations, note, updated_at: now });
   return c.json(preset);
 });
 
 // DELETE /api/presets/:id
-presets.delete("/presets/:id", (c) => {
+presets.delete("/presets/:id", async (c) => {
   const id = c.req.param("id");
-  const existing = db.query("SELECT * FROM translation_presets WHERE id = ?").get(id) as TranslationPreset | null;
-  if (!existing) return c.json({ error: "Not found" }, 404);
-  db.query("DELETE FROM translation_presets WHERE id = ?").run(id);
+  const deleted = await deletePreset(db, id);
+  if (!deleted) return c.json({ error: "Not found" }, 404);
   return c.json({ ok: true });
 });
 

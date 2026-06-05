@@ -13,8 +13,10 @@
  *   `DB_PATH` 建立父目錄，避免 Docker production 路徑與本機預設路徑不一致
  */
 import { Database } from "bun:sqlite";
+import { drizzle, type BunSQLiteDatabase } from "drizzle-orm/bun-sqlite";
 import { mkdir } from "fs/promises";
 import { dirname, join } from "path";
+import * as schema from "./schema";
 
 const DB_PATH = process.env.DB_PATH ?? join(import.meta.dir, "../../data/blog-editor.db");
 const dataDir = dirname(DB_PATH);
@@ -23,9 +25,19 @@ const dataDir = dirname(DB_PATH);
 await mkdir(dataDir, { recursive: true });
 await Bun.write(join(dataDir, ".gitkeep"), "").catch(() => {});
 
-export const db = new Database(DB_PATH, { create: true });
+const sqlite = new Database(DB_PATH, { create: true });
 
-db.exec(`
+/**
+ * Drizzle 實例的型別（綁定本專案 schema）。
+ *
+ * @remarks
+ * repo 函數一律以 `db: DrizzleDB` 為第一參數，呼叫端注入。#02/#03 會把建立方式
+ * 改成 factory（self-host 單例 / Workers 每 request 從 `c.env.DB` 建），屆時此型別
+ * 換成涵蓋 bun-sqlite 與 d1 兩種 driver 的聯集即可，repo 簽章不變。
+ */
+export type DrizzleDB = BunSQLiteDatabase<typeof schema>;
+
+sqlite.exec(`
   CREATE TABLE IF NOT EXISTS drafts (
     id          TEXT PRIMARY KEY,
     title       TEXT NOT NULL DEFAULT '',
@@ -41,7 +53,7 @@ db.exec(`
   )
 `);
 
-db.exec(`
+sqlite.exec(`
   CREATE TABLE IF NOT EXISTS translation_presets (
     id           TEXT PRIMARY KEY,
     keywords     TEXT NOT NULL DEFAULT '[]',
@@ -54,7 +66,7 @@ db.exec(`
 
 // 圖片庫：R2 物件的本地快取。
 // key 為 R2 物件鍵值（PRIMARY KEY），sync 與 upload 都以此 upsert。
-db.exec(`
+sqlite.exec(`
   CREATE TABLE IF NOT EXISTS images (
     key         TEXT PRIMARY KEY,
     url         TEXT NOT NULL,
@@ -70,8 +82,18 @@ for (const [col, def] of [
   ["slug",        "TEXT DEFAULT ''"],
 ] as const) {
   try {
-    db.exec(`ALTER TABLE drafts ADD COLUMN ${col} ${def}`);
+    sqlite.exec(`ALTER TABLE drafts ADD COLUMN ${col} ${def}`);
   } catch {
     // Column already exists, ignore
   }
 }
+
+/**
+ * 全專案共用的 Drizzle 實例（self-host bun-sqlite 單例）。
+ *
+ * @remarks
+ * #01 階段沿用單例，route / prChecker 取得後當第一參數傳入 repo 函數。
+ * #03 會把它正規化成 `c.var.db`（middleware 注入），屆時 repo 簽章不變、只有
+ * 「db 怎麼來」改變。
+ */
+export const db = drizzle(sqlite, { schema });

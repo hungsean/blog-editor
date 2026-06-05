@@ -90,4 +90,17 @@ describe("POST /github/sync", () => {
     const body = (await res.json()) as { imported: string[]; updated: string[] };
     expect(body.updated).toEqual([path]);
   });
+
+  test("單一 path 抓取失敗時收進 errors，整體仍回 200", async () => {
+    const okPath = "src/content/blog/en/ok.md";
+    const badPath = "src/content/blog/en/bad.md";
+    // 第一個 path 成功（mock 預設），第二個 path 讓 getGithubFile 拋錯。
+    github.getGithubFile.mockRejectedValueOnce(new Error("404 not found"));
+    const res = await c.post("/api/github/sync", { paths: [badPath, okPath] });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { imported: string[]; errors: string[] };
+    expect(body.imported).toEqual([okPath]);
+    expect(body.errors).toHaveLength(1);
+    expect(body.errors[0]).toContain(badPath);
+  });
 });

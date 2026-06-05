@@ -78,6 +78,15 @@ describe("GET / PATCH / DELETE /drafts/:id", () => {
     expect(res.status).toBe(404);
   });
 
+  test("GET 存在回 200 並帶回該草稿", async () => {
+    const draft = await createViaApi({ title: "Fetch Me", slug: "fetch-me" });
+    const res = await c.get(`/api/drafts/${draft.id}`);
+    expect(res.status).toBe(200);
+    const got = (await res.json()) as { id: string; title: string };
+    expect(got.id).toBe(draft.id);
+    expect(got.title).toBe("Fetch Me");
+  });
+
   test("PATCH 更新欄位、slug 被 trim；不存在回 404", async () => {
     const draft = await createViaApi({ title: "Old" });
     const res = await c.patch(`/api/drafts/${draft.id}`, { title: "New", slug: "  s  " });
@@ -131,6 +140,30 @@ describe("POST /drafts/:id/publish（單篇）", () => {
     const res = await c.post(`/api/drafts/${draft.id}/publish`);
     expect(res.status).toBe(400);
     expect(((await res.json()) as { reason: string }).reason).toBe("invalid");
+  });
+
+  test("pubDate 格式不合法回 400 reason=invalid", async () => {
+    const draft = await createViaApi({
+      title: "X", slug: "bad-date-fmt", lang: "en",
+      fields: JSON.stringify({ pubDate: "2026/01/01" }),
+    });
+    const res = await c.post(`/api/drafts/${draft.id}/publish`);
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { reason: string; error: string };
+    expect(body.reason).toBe("invalid");
+    expect(body.error).toContain("YYYY-MM-DD");
+  });
+
+  test("pubDate 非真實日曆日期回 400 reason=invalid", async () => {
+    const draft = await createViaApi({
+      title: "X", slug: "bad-date-cal", lang: "en",
+      fields: JSON.stringify({ pubDate: "2026-02-30" }),
+    });
+    const res = await c.post(`/api/drafts/${draft.id}/publish`);
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { reason: string; error: string };
+    expect(body.reason).toBe("invalid");
+    expect(body.error).toContain("不是有效日期");
   });
 
   test("同 lang 已有相同 slug 回 400 reason=conflict", async () => {
@@ -207,6 +240,27 @@ describe("POST /drafts/publish（batch）", () => {
     expect(body.conflicts[0]!.type).toBe("existing_draft");
   });
 
+  test("有 draft 的 pubDate 不合法回 400 reason=invalid_fields", async () => {
+    const ok = await createViaApi({ title: "OK", slug: "ok-post", lang: "en" });
+    const bad = await createViaApi({
+      title: "Bad", slug: "bad-post", lang: "en",
+      fields: JSON.stringify({ pubDate: "2026-02-30" }),
+    });
+    const res = await c.post("/api/drafts/publish", { draftIds: [ok.id, bad.id] });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { reason: string; drafts: Array<{ id: string }> };
+    expect(body.reason).toBe("invalid_fields");
+    expect(body.drafts.map((d) => d.id)).toEqual([bad.id]);
+    expect(github.openBatchPR).not.toHaveBeenCalled();
+  });
+
+  test("openBatchPR 拋錯時回 500", async () => {
+    github.openBatchPR.mockRejectedValueOnce(new Error("github down"));
+    const a = await createViaApi({ title: "P One", slug: "p-one", lang: "en" });
+    const res = await c.post("/api/drafts/publish", { draftIds: [a.id] });
+    expect(res.status).toBe(500);
+  });
+
   test("happy path：呼叫 openBatchPR，全部轉 pr_opened", async () => {
     const a = await createViaApi({ title: "P One", slug: "p-one", lang: "en" });
     const b = await createViaApi({ title: "P Two", slug: "p-two", lang: "en" });
@@ -263,5 +317,27 @@ describe("POST /drafts/:id/resync", () => {
     expect(updated.title).toBe("Remote Post");
     expect(updated.github_sha).toBe("remote-sha");
     expect(github.getGithubFile).toHaveBeenCalledWith("src/content/blog/en/remote.md");
+  });
+
+  test("getGithubFile 拋錯時回 500", async () => {
+    github.getGithubFile.mockRejectedValueOnce(new Error("github down"));
+    await repo.createDraft(db, {
+      id: "rsync2",
+      title: "Local",
+      lang: "zh-tw",
+      slug: "local2",
+      description: "",
+      tags: "[]",
+      fields: "{}",
+      content: "old",
+      status: "published",
+      pr_url: "",
+      github_path: "src/content/blog/en/remote.md",
+      github_sha: "old-sha",
+      created_at: "2026-01-01T00:00:00.000Z",
+      updated_at: "2026-01-01T00:00:00.000Z",
+    });
+    const res = await c.post("/api/drafts/rsync2/resync");
+    expect(res.status).toBe(500);
   });
 });

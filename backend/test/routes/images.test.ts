@@ -86,3 +86,19 @@ test("POST /images/upload：上傳到 R2 並寫入圖片庫", async () => {
   const rows = (await (await c.get("/api/images")).json()) as Array<{ key: string }>;
   expect(rows.map((r) => r.key)).toEqual([body.key]);
 });
+
+test("POST /images/upload：非 multipart body 回 400", async () => {
+  const res = await c.post("/api/images/upload", { not: "multipart" });
+  expect(res.status).toBe(400);
+});
+
+test("POST /images/upload：uploadToR2 拋錯回 500（不寫入 DB）", async () => {
+  r2.uploadToR2.mockRejectedValueOnce(new Error("r2 down"));
+  const form = new FormData();
+  form.set("file", new File([new Uint8Array([1, 2, 3])], "pic.png", { type: "image/png" }));
+  const res = await c.form("/api/images/upload", "POST", form);
+  expect(res.status).toBe(500);
+
+  // 上傳失敗時不應留下任何圖片列。
+  expect(await (await c.get("/api/images")).json()).toEqual([]);
+});

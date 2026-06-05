@@ -73,6 +73,17 @@ describe("POST /og/upload", () => {
     expect((await c.form("/api/og/upload", "POST", form)).status).toBe(400);
   });
 
+  test("缺 draftId 回 400", async () => {
+    const form = new FormData();
+    form.set("file", new File([new Uint8Array([1])], "og.png", { type: "image/png" }));
+    expect((await c.form("/api/og/upload", "POST", form)).status).toBe(400);
+  });
+
+  test("非 multipart body 回 400（Invalid form data）", async () => {
+    const res = await c.post("/api/og/upload", { not: "multipart" });
+    expect(res.status).toBe(400);
+  });
+
   test("happy path：上傳 PNG 到 R2 並回傳 URL", async () => {
     const form = new FormData();
     form.set("file", new File([new Uint8Array([0x89, 0x50])], "og.png", { type: "image/png" }));
@@ -81,5 +92,13 @@ describe("POST /og/upload", () => {
     expect(res.status).toBe(200);
     expect(((await res.json()) as { url: string }).url).toBe("https://cdn.example.com/og/draft1.png");
     expect(r2.uploadToR2).toHaveBeenCalledWith("og/draft1.png", expect.anything(), "image/png");
+  });
+
+  test("uploadToR2 拋錯回 500", async () => {
+    r2.uploadToR2.mockRejectedValueOnce(new Error("r2 down"));
+    const form = new FormData();
+    form.set("file", new File([new Uint8Array([1])], "og.png", { type: "image/png" }));
+    form.set("draftId", "draft1");
+    expect((await c.form("/api/og/upload", "POST", form)).status).toBe(500);
   });
 });

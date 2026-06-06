@@ -19,10 +19,15 @@
  */
 import { Database } from "bun:sqlite";
 import { readMigrationFiles } from "drizzle-orm/migrator";
-import { join } from "node:path";
+import { mkdir } from "node:fs/promises";
+import { dirname, join } from "node:path";
 
 const DB_PATH = process.env.DB_PATH ?? join(import.meta.dir, "../data/blog-editor.db");
 const MIGRATIONS_FOLDER = join(import.meta.dir, "../drizzle");
+
+// 與 db.ts 啟動路徑一致：自訂 DB_PATH 的父目錄可能不存在，先建好再開檔，
+// 否則 `new Database` 會以 SQLITE_CANTOPEN 失敗（見 db.ts 的 mkdir）。
+await mkdir(dirname(DB_PATH), { recursive: true });
 
 const sqlite = new Database(DB_PATH, { create: true });
 

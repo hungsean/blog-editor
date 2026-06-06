@@ -17,6 +17,9 @@ COPY --from=deps /app/node_modules ./node_modules
 COPY package.json bun.lock ./
 COPY index.ts ./
 COPY src ./src
+# drizzle/（版本化 migration）與 scripts/（baseline + migrate）是啟動時套 schema 所需。
+COPY drizzle ./drizzle
+COPY scripts ./scripts
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 # data/ holds the SQLite DB, font cache and og-temp uploads — mounted as a volume.

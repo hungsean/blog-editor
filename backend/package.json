@@ -6,7 +6,12 @@
     "dev": "bun --hot index.ts",
     "start": "bun index.ts",
     "test": "bun test",
-    "test:coverage": "bun test --coverage --coverage-reporter=text"
+    "test:coverage": "bun test --coverage --coverage-reporter=text",
+    "db:generate": "drizzle-kit generate",
+    "db:baseline": "bun run scripts/baseline.ts",
+    "db:migrate": "bun run scripts/migrate.ts",
+    "db:migrate:d1": "wrangler d1 migrations apply blog-editor --remote",
+    "db:migrate:d1:local": "wrangler d1 migrations apply blog-editor --local"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1043.0",
@@ -18,8 +23,10 @@
     "yaml": "^2.9.0"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260606.1",
     "@types/bun": "latest",
     "drizzle-kit": "^0.31.10",
-    "typescript": "^5"
+    "typescript": "^5",
+    "wrangler": "^4.98.0"
   }
 }

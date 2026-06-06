@@ -1,5 +1,6 @@
--- 收斂舊 self-host DB 的 drafts schema：把 description/tags/fields/content/pr_url/
--- github_path/github_sha/slug 由 nullable 改為 NOT NULL，對齊 0000_init（clean DB / D1）。
+-- 收斂舊 self-host DB 的 schema 至 0000_init（clean DB / D1），消除 NOT NULL drift：
+--   1. drafts：description/tags/fields/content/pr_url/github_path/github_sha/slug nullable → NOT NULL。
+--   2. translation_presets.id / images.key：PK 的 NOT NULL parity（見下方說明）。
 --
 -- 背景：舊 applySchema 這些欄位只有 DEFAULT '' 而無 NOT NULL，baseline 只標記
 -- __drizzle_migrations、不改實體 schema，導致舊 DB 與 clean DB/D1 的 NOT NULL 約束漂移。
@@ -47,4 +48,35 @@ SELECT
 FROM `drafts`;--> statement-breakpoint
 DROP TABLE `drafts`;--> statement-breakpoint
 ALTER TABLE `__new_drafts` RENAME TO `drafts`;--> statement-breakpoint
+-- translation_presets / images：舊 applySchema 的 PK 寫成 `TEXT PRIMARY KEY`（無 NOT NULL），
+-- SQLite 會讓這類 PK 欄位 notnull=0；clean DB / D1 的 0000 是 `PRIMARY KEY NOT NULL`（notnull=1）。
+-- 同樣走 table rebuild 收斂 PK 的 NOT NULL parity。其餘欄位舊 schema 本已 NOT NULL，等價重建。
+CREATE TABLE `__new_translation_presets` (
+	`id` text PRIMARY KEY NOT NULL,
+	`keywords` text DEFAULT '[]' NOT NULL,
+	`translations` text DEFAULT '{}' NOT NULL,
+	`note` text DEFAULT '' NOT NULL,
+	`created_at` text NOT NULL,
+	`updated_at` text NOT NULL
+);
+--> statement-breakpoint
+INSERT INTO `__new_translation_presets` (
+	`id`, `keywords`, `translations`, `note`, `created_at`, `updated_at`
+)
+SELECT `id`, `keywords`, `translations`, `note`, `created_at`, `updated_at`
+FROM `translation_presets`;--> statement-breakpoint
+DROP TABLE `translation_presets`;--> statement-breakpoint
+ALTER TABLE `__new_translation_presets` RENAME TO `translation_presets`;--> statement-breakpoint
+CREATE TABLE `__new_images` (
+	`key` text PRIMARY KEY NOT NULL,
+	`url` text NOT NULL,
+	`size` integer DEFAULT 0 NOT NULL,
+	`uploaded_at` text NOT NULL
+);
+--> statement-breakpoint
+INSERT INTO `__new_images` (`key`, `url`, `size`, `uploaded_at`)
+SELECT `key`, `url`, COALESCE(`size`, 0), `uploaded_at`
+FROM `images`;--> statement-breakpoint
+DROP TABLE `images`;--> statement-breakpoint
+ALTER TABLE `__new_images` RENAME TO `images`;--> statement-breakpoint
 PRAGMA foreign_keys=ON;

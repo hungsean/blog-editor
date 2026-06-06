@@ -37,8 +37,14 @@ import type { Hono } from "hono";
 import type { DrizzleDB } from "../../src/lib/db";
 import { registerMocks } from "./mocks";
 
-/** 所有 route 測試共用的暫存 DB 檔路徑（固定，放 OS 暫存目錄，不落在 repo）。 */
-export const ROUTE_TEST_DB_PATH = join(tmpdir(), "blog-editor-route-test.db");
+/**
+ * 所有 route 測試共用的暫存 DB 檔路徑（放 OS 暫存目錄，不落在 repo）。
+ *
+ * @remarks
+ * 檔名帶 `process.pid`，避免同一台機器上多個 `bun test` / `bun run test:coverage`
+ * 程序並行時搶同一個 sqlite 檔導致 `SQLITE_BUSY` 或 module init error。
+ */
+export const ROUTE_TEST_DB_PATH = join(tmpdir(), `blog-editor-route-test-${process.pid}.db`);
 
 /** 暫存 DB 主檔與 SQLite 可能產生的 -wal / -shm 副檔。 */
 const DB_FILES = [ROUTE_TEST_DB_PATH, `${ROUTE_TEST_DB_PATH}-wal`, `${ROUTE_TEST_DB_PATH}-shm`];

@@ -129,12 +129,17 @@ const ALL_SPIES = [
 ];
 
 /**
- * 清掉所有 mock 的呼叫紀錄與「Once」單次覆寫，回到 mock 定義時的預設實作。
+ * 清掉所有 mock 的**呼叫紀錄**，回到「呼叫次數 / 參數紀錄」乾淨狀態。
  *
  * @remarks
- * 用 `mockClear()`（清呼叫紀錄）而非 `mockReset()`（會連預設實作一起清掉），
- * 配合測試以 `mockResolvedValueOnce` / `mockRejectedValueOnce` 做單次覆寫，
- * 單次覆寫被消費或在此清除後即恢復預設，達成 route 測試之間互不影響。
+ * 只呼叫 `mockClear()`，**不會**清掉預設實作（避免 `mockReset()` 把 `mock()` 定義時
+ * 的預設行為一起抹掉），也**不會**清掉尚未消費的 `mockResolvedValueOnce` /
+ * `mockRejectedValueOnce`（Bun 1.3 的 `mockClear()` 不動 once queue，已實測）。
+ *
+ * 因此 route 測試對 once override 有一條**契約**：誰設定、誰負責在同一測試內把它消費掉，
+ * 不要遺留 unconsumed once override 給下一個測試（例如在 error path 設了 once override，
+ * 但 SUT 走 early-return 沒呼叫該 mock）。違反此契約會造成順序相依與假紅，
+ * `resetMocks()` 不會替你兜底。
  */
 export function resetMocks(): void {
   for (const spy of ALL_SPIES) spy.mockClear();

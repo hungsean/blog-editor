@@ -1,0 +1,16 @@
+# Cloudflare 設定（#02：先建立 D1 binding 供 migration apply 用；Worker 化在 #03）。
+#
+# 套用 migration（與 self-host 共用 drizzle/ 下同一批檔）：
+#   wrangler d1 create blog-editor          # 第一次建立，把回傳的 database_id 填到下方
+#   bun run db:migrate:d1                    # 遠端：wrangler d1 migrations apply blog-editor --remote
+#   bun run db:migrate:d1:local             # 本地模擬：... --local（開發測試 schema，不碰雲端）
+#
+# migrations_dir 指向 drizzle/，wrangler 會把 drizzle-kit 產的 SQL 當 D1 migration 套用。
+name = "blog-editor-backend"
+compatibility_date = "2026-06-07"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "blog-editor"
+database_id = "65e3f85e-c0be-4955-9c8b-7206137d5070"
+migrations_dir = "drizzle"

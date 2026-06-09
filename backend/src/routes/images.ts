@@ -15,9 +15,9 @@
  */
 import { Hono } from "hono";
 import { nanoid } from "nanoid";
-import { db } from "../lib/db";
+import type { AppEnv } from "../app";
 import { listImages, upsertImage, insertImage } from "../lib/repos/images";
-import { uploadToR2, listR2Objects, isR2Enabled } from "../lib/r2";
+import { createR2 } from "../lib/r2";
 
 /** 圖片在 R2 的存放前綴，與 upload route 的 `/upload/r2` 一致。 */
 const UPLOAD_PREFIX = "uploads/";
@@ -32,11 +32,11 @@ interface ImageRow {
   uploaded_at: string;
 }
 
-const images = new Hono();
+const images = new Hono<AppEnv>();
 
 // GET /api/images — 列出圖片庫（純讀本地 DB，不碰 R2）
 images.get("/images", async (c) => {
-  const rows = await listImages(db);
+  const rows = await listImages(c.var.db);
   return c.json(rows);
 });
 
@@ -48,11 +48,12 @@ images.get("/images", async (c) => {
  * 回傳 `synced` 為實際寫入的圖片數量（已過濾非圖片副檔名）。
  */
 images.post("/images/sync", async (c) => {
-  if (!isR2Enabled()) return c.json({ error: "R2 not configured" }, 503);
+  const r2 = createR2(c.var.env.r2);
+  if (!r2.isR2Enabled()) return c.json({ error: "R2 not configured" }, 503);
 
   let objects;
   try {
-    objects = await listR2Objects(UPLOAD_PREFIX);
+    objects = await r2.listR2Objects(UPLOAD_PREFIX);
   } catch (err) {
     return c.json({ error: String(err) }, 500);
   }
@@ -61,7 +62,7 @@ images.post("/images/sync", async (c) => {
   for (const obj of objects) {
     const ext = obj.key.split(".").pop()?.toLowerCase() ?? "";
     if (!IMAGE_EXT.has(ext)) continue;
-    await upsertImage(db, {
+    await upsertImage(c.var.db, {
       key: obj.key,
       url: obj.url,
       size: obj.size,
@@ -81,7 +82,8 @@ images.post("/images/sync", async (c) => {
  * 接受 multipart form，欄位名為 `file`。
  */
 images.post("/images/upload", async (c) => {
-  if (!isR2Enabled()) return c.json({ error: "R2 not configured" }, 503);
+  const r2 = createR2(c.var.env.r2);
+  if (!r2.isR2Enabled()) return c.json({ error: "R2 not configured" }, 503);
 
   const formData = await c.req.formData().catch(() => null);
   if (!formData) return c.json({ error: "Invalid form data" }, 400);
@@ -94,9 +96,9 @@ images.post("/images/upload", async (c) => {
   const buffer = new Uint8Array(await file.arrayBuffer());
 
   try {
-    const url = await uploadToR2(key, buffer, file.type || "application/octet-stream");
+    const url = await r2.uploadToR2(key, buffer, file.type || "application/octet-stream");
     const uploaded_at = new Date().toISOString();
-    await insertImage(db, { key, url, size: file.size, uploaded_at });
+    await insertImage(c.var.db, { key, url, size: file.size, uploaded_at });
     return c.json({ key, url, size: file.size, uploaded_at } satisfies ImageRow);
   } catch (err) {
     return c.json({ error: String(err) }, 500);

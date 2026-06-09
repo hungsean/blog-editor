@@ -1,6 +1,6 @@
 import { Hono } from "hono";
 import { nanoid } from "nanoid";
-import { db } from "../lib/db";
+import type { AppEnv } from "../app";
 import {
   listPresets,
   getPresetById,
@@ -9,11 +9,11 @@ import {
   deletePreset,
 } from "../lib/repos/presets";
 
-const presets = new Hono();
+const presets = new Hono<AppEnv>();
 
 // GET /api/presets
 presets.get("/presets", async (c) => {
-  const rows = await listPresets(db);
+  const rows = await listPresets(c.var.db);
   return c.json(rows);
 });
 
@@ -28,7 +28,7 @@ presets.post("/presets", async (c) => {
     return c.json({ error: "keywords must be a non-empty array" }, 400);
   }
   const now = new Date().toISOString();
-  const preset = await createPreset(db, {
+  const preset = await createPreset(c.var.db, {
     id: nanoid(),
     keywords: JSON.stringify(body.keywords),
     translations: JSON.stringify(body.translations ?? {}),
@@ -41,7 +41,7 @@ presets.post("/presets", async (c) => {
 
 // GET /api/presets/:id
 presets.get("/presets/:id", async (c) => {
-  const preset = await getPresetById(db, c.req.param("id"));
+  const preset = await getPresetById(c.var.db, c.req.param("id"));
   if (!preset) return c.json({ error: "Not found" }, 404);
   return c.json(preset);
 });
@@ -49,7 +49,7 @@ presets.get("/presets/:id", async (c) => {
 // PATCH /api/presets/:id
 presets.patch("/presets/:id", async (c) => {
   const id = c.req.param("id");
-  const existing = await getPresetById(db, id);
+  const existing = await getPresetById(c.var.db, id);
   if (!existing) return c.json({ error: "Not found" }, 404);
 
   const body = await c.req.json().catch(() => ({})) as {
@@ -62,14 +62,14 @@ presets.patch("/presets/:id", async (c) => {
   const note = body.note ?? existing.note;
   const now = new Date().toISOString();
 
-  const preset = await updatePreset(db, id, { keywords, translations, note, updated_at: now });
+  const preset = await updatePreset(c.var.db, id, { keywords, translations, note, updated_at: now });
   return c.json(preset);
 });
 
 // DELETE /api/presets/:id
 presets.delete("/presets/:id", async (c) => {
   const id = c.req.param("id");
-  const deleted = await deletePreset(db, id);
+  const deleted = await deletePreset(c.var.db, id);
   if (!deleted) return c.json({ error: "Not found" }, 404);
   return c.json({ ok: true });
 });

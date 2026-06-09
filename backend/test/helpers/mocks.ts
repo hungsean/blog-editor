@@ -5,13 +5,17 @@
  * OpenAI 翻譯（`lib/translator`）、OG 圖片生成（`lib/ogImage`）。
  *
  * @remarks
- * 全部以 `bun:test` 的 `mock.module()` 整模組替換，讓 route 測試**斷網也能跑**、
- * 不打任何真實外部服務。各 mock function 都是 `mock()` spy，測試可：
+ * #03 起 `lib/github` / `lib/r2` / `lib/translator` 改成 **factory**（`createGithub(env)` 等），
+ * route 在每個 handler 內呼叫 factory 取得 client。因此這裡用 `mock.module()` 把 factory 整個
+ * 替換成「回傳固定 client 物件」的函式——該 client 的每個 method 都是 `mock()` spy，且**跨呼叫
+ * 共用同一個物件**，所以測試在 handler 跑之前設的 `mockResolvedValueOnce` / 之後讀的呼叫紀錄都生效。
+ *
+ * 各 mock function 都是 `mock()` spy，測試可：
  * - 直接斷言呼叫次數 / 參數（`expect(github.openPR).toHaveBeenCalled()`）
  * - 以 `mockResolvedValueOnce` / `mockRejectedValueOnce` 覆寫單次行為（測錯誤路徑）
  *
- * **mock 緊貼真實簽章**（對齊 `lib/github`、`lib/r2`、`lib/translator`、`lib/ogImage`
- * 的 export）；若真實介面改動，這裡要同步，否則會假綠。
+ * **mock 緊貼真實簽章**（對齊 `lib/github`、`lib/r2`、`lib/translator`、`lib/ogImage` 的
+ * factory 回傳介面）；若真實介面改動，這裡要同步，否則會假綠。
  *
  * `registerMocks()` 必須在**任何會 import 這些模組的 SUT 被載入之前**呼叫
  * （見 `setupRouteEnv.ts` 的載入順序契約）。`resetMocks()` 在每個 route 測試的
@@ -19,7 +23,7 @@
  */
 import { mock } from "bun:test";
 
-/** 對齊 `lib/github` 的 export。route 只用到 file / PR 相關函式。 */
+/** GitHub client 的 method spy，對齊 `createGithub(env)` 回傳的介面（route 只用到 file / PR 相關）。 */
 export const github = {
   getGithubFile: mock(
     async (_path: string): Promise<{ content: string; sha: string }> => ({
@@ -54,10 +58,10 @@ export const github = {
   })),
   getPRFiles: mock(async (_n: number) => [] as Array<{ filename: string; sha: string; status: string }>),
   getFileSha: mock(async (_path: string) => "remote-sha"),
-  GITHUB_DEFAULT_BRANCH: "main",
+  defaultBranch: "main",
 };
 
-/** 對齊 `lib/r2` 的 export。預設 R2 視為已啟用。 */
+/** R2 client 的 method spy，對齊 `createR2(env)` 回傳的介面。預設 R2 視為已啟用。 */
 export const r2 = {
   isR2Enabled: mock((): boolean => true),
   uploadToR2: mock(
@@ -71,7 +75,7 @@ export const r2 = {
   ),
 };
 
-/** 對齊 `lib/translator` 的 export。預設翻譯視為已啟用。 */
+/** Translator client 的 method spy，對齊 `createTranslator(env)` 回傳的介面。預設翻譯視為已啟用。 */
 export const translator = {
   isTranslationEnabled: mock((): boolean => true),
   translateDraft: mock(
@@ -88,7 +92,7 @@ export const translator = {
   ),
 };
 
-/** 對齊 `lib/ogImage` 的 export。回傳一段假 PNG bytes（PNG magic header）。 */
+/** 對齊 `lib/ogImage` 的 export（非 factory，#06 才動）。回傳一段假 PNG bytes（PNG magic header）。 */
 export const ogImage = {
   generateArticleOg: mock(
     async (_params: unknown): Promise<Uint8Array> =>
@@ -97,17 +101,21 @@ export const ogImage = {
 };
 
 /**
- * 用 `mock.module()` 把上述四個 lib 整模組替換掉。
+ * 用 `mock.module()` 把四個 lib 整模組替換掉。
  *
  * @remarks
- * specifier 以**本檔（test/helpers/mocks.ts）為基準**解析至 `src/lib/*`；SUT（route /
- * lib）import 同一個檔案的絕對路徑，Bun 以解析後的絕對路徑比對，因此替換生效。
+ * github / r2 / translator 是 factory：mock 的 `createX` **永遠回傳同一個** client 物件
+ * （上方的 spy 集合），讓「設定單次覆寫 → handler 內呼叫 → 斷言呼叫紀錄」全程操作同一組 spy。
+ * ogImage 仍是具名 function export。
+ *
+ * specifier 以**本檔（test/helpers/mocks.ts）為基準**解析至 `src/lib/*`；SUT（route / lib）
+ * import 同一個檔案的絕對路徑，Bun 以解析後的絕對路徑比對，因此替換生效。
  * 必須在 dynamic import SUT 之前呼叫。
  */
 export function registerMocks(): void {
-  mock.module("../../src/lib/github", () => ({ ...github }));
-  mock.module("../../src/lib/r2", () => ({ ...r2 }));
-  mock.module("../../src/lib/translator", () => ({ ...translator }));
+  mock.module("../../src/lib/github", () => ({ createGithub: () => github }));
+  mock.module("../../src/lib/r2", () => ({ createR2: () => r2 }));
+  mock.module("../../src/lib/translator", () => ({ createTranslator: () => translator }));
   mock.module("../../src/lib/ogImage", () => ({ ...ogImage }));
 }
 

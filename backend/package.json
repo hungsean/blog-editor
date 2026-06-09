@@ -3,8 +3,9 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "bun --hot index.ts",
-    "start": "bun index.ts",
+    "dev": "bun --hot server.bun.ts",
+    "start": "bun server.bun.ts",
+    "dev:worker": "wrangler dev",
     "test": "bun test",
     "test:coverage": "bun test --coverage --coverage-reporter=text",
     "db:generate": "drizzle-kit generate",

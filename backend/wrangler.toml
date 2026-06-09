@@ -7,6 +7,7 @@
 #
 # migrations_dir 指向 drizzle/，wrangler 會把 drizzle-kit 產的 SQL 當 D1 migration 套用。
 name = "blog-editor-backend"
+main = "worker.ts"
 compatibility_date = "2026-06-07"
 
 [[d1_databases]]

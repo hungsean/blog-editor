@@ -15,8 +15,14 @@ function jsonInit(method: string, body?: unknown): RequestInit {
   };
 }
 
-/** 綁定一個 Hono app，回傳 get/post/patch/del 四個發 request 的 helper。 */
-export function makeClient(app: Hono) {
+/**
+ * 綁定一個 Hono app，回傳 get/post/patch/del 四個發 request 的 helper。
+ *
+ * @remarks
+ * 型別放寬為 `Hono<any, any, any>`，以接受帶自訂 `Env` generic 的 app（#03 起 route app
+ * 為 `Hono<AppEnv>`）；client 只用到 `app.request`，與 Env generic 無關。
+ */
+export function makeClient(app: Hono<any, any, any>) {
   return {
     get: (path: string) => app.request(path),
     post: (path: string, body?: unknown) => app.request(path, jsonInit("POST", body)),

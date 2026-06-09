@@ -37,6 +37,21 @@ Check:
 - Is it avoiding over-engineering / YAGNI violations?
 - Are remaining risks, assumptions, and follow-ups made explicit?
 
+## Coverage Review
+
+Do not rely only on the aggregate coverage percentage.
+
+Check:
+
+- Did the coverage report include every changed runtime/source file, not just files imported by tests?
+- Are new entrypoints, scripts, adapters, providers, factories, and scheduled/background jobs covered by tests or explicit manual verification?
+- Did mocks hide the real implementation under review? If a route test mocks a factory/client module, the route behavior may be covered while the real factory/client is not.
+- Are runtime-boundary paths covered separately, such as Bun entrypoints, Worker entrypoints, D1/Bun DB factories, env parsing, storage clients, and external API clients?
+- Are error paths and configuration variants covered, including missing env values, malformed env values, disabled integrations, and runtime-specific bindings?
+- Were coverage gaps caused by unimported files, mocked modules, or intentionally deferred scope called out in `test_coverage_gaps`?
+
+Treat coverage as insufficient when the changed behavior is only indirectly tested through mocks, or when a changed source file is absent from the coverage report and there is no explicit verification for it.
+
 ## Output Format
 
 Use this structure:

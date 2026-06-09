@@ -58,6 +58,27 @@ Before handing off to review:
 - Report actual command output; if something fails or was skipped, say so
 - Do not claim "done" for criteria you did not verify
 
+### Test coverage 盲點：「有改到但沒檢測到」
+
+覆蓋率數字（如 `bun run test:coverage`）會**高估**信心，因為 coverage reporter 只統計**被 import 過**
+的檔案。改到但測試從未載入的檔案，根本不會出現在報告裡——聚合百分比看起來很高，實際是漏算。
+交付前必須主動比對「這次改了哪些檔案」與「coverage 報告列出哪些檔案」，補上缺口：
+
+- **列出本次變更檔，逐一確認有出現在 coverage 報告**：`git diff --name-only main...HEAD` 對照
+  `test:coverage` 的檔案清單。不在清單上的變更檔 = 零覆蓋的盲區，要嘛補測試、要嘛在交付說明寫清楚為何
+  不可測（純 entry / 組裝檔，見下）。
+- **被 mock 取代的真實模組要有獨立測試**：route / 整合測試常用 `mock.module()` 把 factory、外部 client
+  換成假替身——這只驗證了「呼叫端的接線」，**沒驗證真實實作**。真實的 factory / client（如
+  `createGithub` / `createR2` / 依賴注入的 `startPRChecker`）必須另寫直接測試（mock 更底層的邊界：
+  全域 `fetch`、SDK module、注入假 deps），否則真實實作回歸時測試仍全綠。
+- **runtime / 入口檔要有「真的跑一次」的煙霧測試**：只 build / dry-run 過的入口（如 Workers 入口）等於沒驗證
+  runtime 行為。盡量提供能在測試行程內真實處理一次請求的 smoke test（必要時自寫輕量 binding shim）；
+  若真的不可測，必須**明確記錄**接受的替代驗證（dry-run / 手動）與原因。
+- **純 entry / 組裝檔的豁免要寫明**：只做 side-effect 組裝、無法在不啟動 server 的情況下 import 的檔案
+  （如 `server.bun.ts`、CLI script），可不強求覆蓋，但要在交付說明點名「這些檔案不在報告中、原因、其組裝的單元
+  已被各自的測試覆蓋」，不要讓它默默消失在聚合數字裡。
+- **不要把高聚合覆蓋率當成通過條件**：先確認「變更檔 = 被測檔」，再看百分比。
+
 ## Revision Rules
 
 After Code Reviewer feedback:

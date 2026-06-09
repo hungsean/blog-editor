@@ -41,3 +41,4 @@ Before editing any file, read it first. Before modifying a function, grep for al
 ## issue planing
 
 - 如果正在issue planning狀態，請按照 `plan/issue-review-rules-planner.md` 來規劃
+- 如果正在實作狀態，請按照 `plan/issue-review-rules-implementer.md` 來進行實作

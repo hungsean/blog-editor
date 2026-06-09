@@ -2,34 +2,25 @@
  * `lib/translator` 測試。
  *
  * @remarks
- * translator.ts 在 **module load 當下**就把 `OPENAI_API_KEY` / `OPENAI_MODEL` /
- * `OPENAI_BASE_URL` 讀進 const，因此測不同 env 必須「先設 env → 再載入模組」。
- * 用 dynamic import 加 query-string（Bun 視為不同模組、會重新執行）達成同一檔測
- * 「未啟用」與「已啟用」兩種狀態。
+ * #03 起 translator 改為 {@link createTranslator} factory，設定由參數（`OpenAIEnv`）注入，
+ * 不再於 module load 讀 `process.env`。因此測不同設定只要用不同 env 物件 `createTranslator(env)`，
+ * 不需再靠 dynamic import + query-string 重載模組、也不碰 `process.env`。
  *
  * 翻譯不打真實 OpenAI：覆寫 `globalThis.fetch` 攔截 `/v1/chat/completions` 呼叫，
  * 用假回應驗證解析、fallback、錯誤路徑與 glossary 注入。
  */
-import { describe, test, expect, beforeAll, afterEach, afterAll, mock } from "bun:test";
+import { describe, test, expect, afterEach, mock } from "bun:test";
+import { createTranslator } from "../src/lib/translator";
+import type { OpenAIEnv } from "../src/lib/env";
 
 const ORIGINAL_FETCH = globalThis.fetch;
-const ORIGINAL_KEY = process.env.OPENAI_API_KEY;
-const ORIGINAL_MODEL = process.env.OPENAI_MODEL;
-const ORIGINAL_BASE = process.env.OPENAI_BASE_URL;
 
-type Translator = typeof import("../src/lib/translator");
-
-/**
- * 以 query-string 強制重新載入 translator（Bun 視為不同模組）。
- *
- * @remarks
- * specifier 用變數而非字面值，避免 TS 對 query-string path 做模組解析（會誤報找不到模組）；
- * 執行期由 Bun 正確解析至同一個 `src/lib/translator.ts`。
- */
-function loadTranslator(tag: string): Promise<Translator> {
-  const spec = `../src/lib/translator?${tag}`;
-  return import(spec) as Promise<Translator>;
-}
+/** 預設啟用、官方 endpoint、gpt-4o-mini 的測試設定。 */
+const ENABLED_ENV: OpenAIEnv = {
+  apiKey: "test-key",
+  model: "gpt-4o-mini",
+  baseUrl: "https://api.openai.com",
+};
 
 /** 覆寫 `globalThis.fetch` 為一個帶參數型別的 spy，回傳該 spy 供斷言呼叫內容。 */
 function stubFetch(impl: (url: string, init?: RequestInit) => Promise<Response>) {
@@ -51,23 +42,8 @@ afterEach(() => {
   globalThis.fetch = ORIGINAL_FETCH;
 });
 
-afterAll(() => {
-  // 還原被測試改動的 env，避免污染其他測試檔。
-  if (ORIGINAL_KEY === undefined) delete process.env.OPENAI_API_KEY;
-  else process.env.OPENAI_API_KEY = ORIGINAL_KEY;
-  if (ORIGINAL_MODEL === undefined) delete process.env.OPENAI_MODEL;
-  else process.env.OPENAI_MODEL = ORIGINAL_MODEL;
-  if (ORIGINAL_BASE === undefined) delete process.env.OPENAI_BASE_URL;
-  else process.env.OPENAI_BASE_URL = ORIGINAL_BASE;
-});
-
 describe("isTranslationEnabled — 未設定 API key", () => {
-  let mod: Translator;
-
-  beforeAll(async () => {
-    process.env.OPENAI_API_KEY = "";
-    mod = await loadTranslator("disabled");
-  });
+  const mod = createTranslator({ apiKey: "", model: "gpt-4o-mini", baseUrl: "https://api.openai.com" });
 
   test("isTranslationEnabled() 回傳 false", () => {
     expect(mod.isTranslationEnabled()).toBe(false);
@@ -87,14 +63,7 @@ describe("isTranslationEnabled — 未設定 API key", () => {
 });
 
 describe("translateDraft — 已啟用", () => {
-  let mod: Translator;
-
-  beforeAll(async () => {
-    process.env.OPENAI_API_KEY = "test-key";
-    delete process.env.OPENAI_MODEL; // 預設 gpt-4o-mini
-    delete process.env.OPENAI_BASE_URL; // 預設官方 endpoint
-    mod = await loadTranslator("enabled");
-  });
+  const mod = createTranslator(ENABLED_ENV);
 
   test("isTranslationEnabled() 回傳 true", () => {
     expect(mod.isTranslationEnabled()).toBe(true);
@@ -161,6 +130,26 @@ describe("translateDraft — 已啟用", () => {
         targetLang: "ja",
       }),
     ).rejects.toThrow("No content in OpenAI API response");
+  });
+
+  test("自訂 baseUrl / model 會反映在 fetch 與歸因說明", async () => {
+    const custom = createTranslator({
+      apiKey: "k",
+      model: "my-model",
+      baseUrl: "https://proxy.example.com",
+    });
+    const fetchSpy = stubFetch(async () => okResponse({ content: "z" }));
+
+    const result = await custom.translateDraft({
+      title: "t",
+      description: "",
+      content: "c",
+      sourceLang: "en",
+      targetLang: "ja",
+    });
+
+    expect(fetchSpy.mock.calls[0]![0]).toBe("https://proxy.example.com/v1/chat/completions");
+    expect(result.content).toContain("Translated by my-model");
   });
 
   test("有命中的 preset 會把 glossary 注入 system prompt", async () => {

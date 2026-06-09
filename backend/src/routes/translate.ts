@@ -1,18 +1,19 @@
 import { Hono } from "hono";
-import { db } from "../lib/db";
+import type { AppEnv } from "../app";
 import { listPresets } from "../lib/repos/presets";
-import { translateDraft, isTranslationEnabled } from "../lib/translator";
+import { createTranslator } from "../lib/translator";
 
-const translate = new Hono();
+const translate = new Hono<AppEnv>();
 
 // GET /api/translation/status
 translate.get("/translation/status", (c) => {
-  return c.json({ enabled: isTranslationEnabled() });
+  return c.json({ enabled: createTranslator(c.var.env.openai).isTranslationEnabled() });
 });
 
 // POST /api/translation — translate content and return result without creating a draft
 translate.post("/translation", async (c) => {
-  if (!isTranslationEnabled()) {
+  const translator = createTranslator(c.var.env.openai);
+  if (!translator.isTranslationEnabled()) {
     return c.json({ error: "AI translation is not enabled" }, 503);
   }
 
@@ -30,7 +31,7 @@ translate.post("/translation", async (c) => {
   }
 
   try {
-    const allPresets = await listPresets(db);
+    const allPresets = await listPresets(c.var.db);
     const textToSearch = [title, description, content].join(" ").toLowerCase();
     const relevantPresets = allPresets
       .map((p) => ({
@@ -40,7 +41,7 @@ translate.post("/translation", async (c) => {
       }))
       .filter((p) => p.keywords.some((kw) => textToSearch.includes(kw.toLowerCase())));
 
-    const translated = await translateDraft({
+    const translated = await translator.translateDraft({
       title,
       description: description ?? "",
       content,

@@ -6,8 +6,9 @@ Bun + Hono 的 REST API 伺服器。架構與設計決策見 [`CLAUDE.md`](./CLA
 
 ```sh
 bun install
-bun run dev    # bun --hot index.ts（開發，熱重載）
-bun run start  # bun index.ts（正式）
+bun run dev         # bun --hot server.bun.ts（self-host 開發，熱重載）
+bun run start       # bun server.bun.ts（self-host 正式）
+bun run dev:worker  # wrangler dev（Cloudflare Workers 入口 worker.ts，#03 起為精簡煙霧子集）
 ```
 
 Bun 會自動載入 `.env`，啟動前請依 `.env.example` 設好環境變數。

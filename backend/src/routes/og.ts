@@ -13,10 +13,11 @@
  *   避免重複生成，也不需暫存檔。
  */
 import { Hono } from "hono";
+import type { AppEnv } from "../app";
 import { generateArticleOg } from "../lib/ogImage";
-import { uploadToR2, isR2Enabled } from "../lib/r2";
+import { createR2 } from "../lib/r2";
 
-const og = new Hono();
+const og = new Hono<AppEnv>();
 
 /**
  * POST /api/og/preview — 生成 OG 圖並回傳 PNG bytes。
@@ -53,7 +54,8 @@ og.post("/og/preview", async (c) => {
  * 同一草稿重複生成會直接覆蓋。`draftId` 以字元白名單驗證避免路徑注入。
  */
 og.post("/og/upload", async (c) => {
-  if (!isR2Enabled()) return c.json({ error: "R2 not configured" }, 503);
+  const r2 = createR2(c.var.env.r2);
+  if (!r2.isR2Enabled()) return c.json({ error: "R2 not configured" }, 503);
 
   const formData = await c.req.formData().catch(() => null);
   if (!formData) return c.json({ error: "Invalid form data" }, 400);
@@ -69,7 +71,7 @@ og.post("/og/upload", async (c) => {
   const bytes = new Uint8Array(await file.arrayBuffer());
 
   try {
-    const url = await uploadToR2(`og/${safeId}.png`, bytes, "image/png");
+    const url = await r2.uploadToR2(`og/${safeId}.png`, bytes, "image/png");
     return c.json({ url });
   } catch (err) {
     return c.json({ error: String(err) }, 500);

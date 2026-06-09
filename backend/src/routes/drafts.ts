@@ -1,7 +1,7 @@
 import { Hono } from "hono";
 import { nanoid } from "nanoid";
 import { Document, visit } from "yaml";
-import { db } from "../lib/db";
+import type { AppEnv } from "../app";
 import {
   listDrafts,
   getDraftById,
@@ -12,12 +12,12 @@ import {
   findSlugConflict,
   findSlugConflictExcludingIds,
 } from "../lib/repos/drafts";
-import { getGithubFile, openPR, openBatchPR } from "../lib/github";
+import { createGithub } from "../lib/github";
 import { parseFrontmatter, frontmatterToDraft } from "../lib/frontmatter";
 import { slugify, isValidSlug, SLUG_PATTERN } from "../lib/slugify";
 import type { Draft } from "../types";
 
-const drafts = new Hono();
+const drafts = new Hono<AppEnv>();
 
 /**
  * 將 draft 的 frontmatter 欄位序列化為 YAML 字串。
@@ -92,7 +92,7 @@ function expectedGithubPath(lang: string, slug: string): string {
 
 // GET /api/drafts
 drafts.get("/drafts", async (c) => {
-  const rows = await listDrafts(db);
+  const rows = await listDrafts(c.var.db);
   return c.json(rows);
 });
 
@@ -109,7 +109,7 @@ drafts.post("/drafts", async (c) => {
   const id = nanoid();
   const body = await c.req.json().catch(() => ({})) as Partial<Draft>;
 
-  const draft = await createDraft(db, {
+  const draft = await createDraft(c.var.db, {
     id,
     title: body.title ?? "",
     lang: body.lang ?? "zh-tw",
@@ -133,7 +133,7 @@ drafts.post("/drafts/publish", async (c) => {
     return c.json({ error: "draftIds is required" }, 400);
   }
 
-  const draftList = (await Promise.all(body.draftIds.map((id) => getDraftById(db, id))))
+  const draftList = (await Promise.all(body.draftIds.map((id) => getDraftById(c.var.db, id))))
     .filter((d): d is Draft => d !== null);
 
   if (draftList.length === 0) return c.json({ error: "No valid drafts found" }, 404);
@@ -168,7 +168,7 @@ drafts.post("/drafts/publish", async (c) => {
   const dbConflicts: object[] = [];
   for (const { draft, slug } of resolved) {
     if (batchKeys.get(`${draft.lang}:${slug}`)!.length > 1) continue;
-    const conflict = await findSlugConflictExcludingIds(db, draft.lang, slug, batchIds);
+    const conflict = await findSlugConflictExcludingIds(c.var.db, draft.lang, slug, batchIds);
     if (conflict) {
       dbConflicts.push({ type: "existing_draft", lang: draft.lang, slug, draft: { id: draft.id, title: draft.title }, conflict });
     }
@@ -211,13 +211,13 @@ drafts.post("/drafts/publish", async (c) => {
   }));
 
   try {
-    const { prUrl } = await openBatchPR(files);
+    const { prUrl } = await createGithub(c.var.env.github).openBatchPR(files);
     const now = new Date().toISOString();
     for (const { draft, slug } of built) {
       // 保存每篇 draft 的 resolved slug 與 expected path：批次 PR 內含多篇 .md，
       // prChecker 必須靠這個 path 精準對應，否則所有 draft 會被標成同一個檔案。
       const githubPath = draft.github_path || expectedGithubPath(draft.lang, slug);
-      await updateDraft(db, draft.id, {
+      await updateDraft(c.var.db, draft.id, {
         status: "pr_opened", pr_url: prUrl, slug, github_path: githubPath, updated_at: now,
       });
     }
@@ -229,7 +229,7 @@ drafts.post("/drafts/publish", async (c) => {
 
 // GET /api/drafts/:id
 drafts.get("/drafts/:id", async (c) => {
-  const draft = await getDraftById(db, c.req.param("id"));
+  const draft = await getDraftById(c.var.db, c.req.param("id"));
   if (!draft) return c.json({ error: "Not found" }, 404);
   return c.json(draft);
 });
@@ -237,13 +237,13 @@ drafts.get("/drafts/:id", async (c) => {
 // PATCH /api/drafts/:id
 drafts.patch("/drafts/:id", async (c) => {
   const id = c.req.param("id");
-  const existing = await getDraftById(db, id);
+  const existing = await getDraftById(c.var.db, id);
   if (!existing) return c.json({ error: "Not found" }, 404);
 
   const body = await c.req.json().catch(() => ({})) as Partial<Draft>;
   const now = new Date().toISOString();
 
-  const draft = await updateDraft(db, id, {
+  const draft = await updateDraft(c.var.db, id, {
     title:       body.title       ?? existing.title,
     lang:        body.lang        ?? existing.lang,
     slug:        body.slug !== undefined ? body.slug.trim() : existing.slug,
@@ -263,14 +263,14 @@ drafts.delete("/drafts", async (c) => {
     return c.json({ error: "draftIds is required" }, 400);
   }
 
-  const deleted = await deleteDrafts(db, body.draftIds);
+  const deleted = await deleteDrafts(c.var.db, body.draftIds);
   return c.json({ success: true, deleted, count: deleted.length });
 });
 
 // DELETE /api/drafts/:id
 drafts.delete("/drafts/:id", async (c) => {
   const id = c.req.param("id");
-  const existed = await deleteDraft(db, id);
+  const existed = await deleteDraft(c.var.db, id);
   if (!existed) return c.json({ error: "Not found" }, 404);
   return c.json({ success: true });
 });
@@ -278,7 +278,7 @@ drafts.delete("/drafts/:id", async (c) => {
 // POST /api/drafts/:id/publish
 drafts.post("/drafts/:id/publish", async (c) => {
   const id = c.req.param("id");
-  const draft = await getDraftById(db, id);
+  const draft = await getDraftById(c.var.db, id);
   if (!draft) return c.json({ error: "Not found" }, 404);
 
   const { frontmatter, date, slug } = buildFrontmatter(draft);
@@ -291,13 +291,13 @@ drafts.post("/drafts/:id/publish", async (c) => {
     return c.json({ success: false, reason: "invalid", error: fieldError }, 400);
   }
 
-  const slugConflict = await findSlugConflict(db, draft.lang, slug, id);
+  const slugConflict = await findSlugConflict(c.var.db, draft.lang, slug, id);
   if (slugConflict) {
     return c.json({ success: false, reason: "conflict", error: "Slug already exists in this language", conflict: slugConflict }, 400);
   }
 
   try {
-    const { prUrl, filePath } = await openPR({
+    const { prUrl, filePath } = await createGithub(c.var.env.github).openPR({
       title: draft.title,
       slug,
       lang: draft.lang,
@@ -310,7 +310,7 @@ drafts.post("/drafts/:id/publish", async (c) => {
 
     // 寫回 resolved slug（可能來自 slugify fallback）與 expected path，
     // 讓列表顯示正確 slug、prChecker 能精準對應 PR 檔案。
-    await updateDraft(db, id, {
+    await updateDraft(c.var.db, id, {
       status: "pr_opened", pr_url: prUrl, slug, github_path: filePath, updated_at: new Date().toISOString(),
     });
 
@@ -323,17 +323,17 @@ drafts.post("/drafts/:id/publish", async (c) => {
 // POST /api/drafts/:id/resync
 drafts.post("/drafts/:id/resync", async (c) => {
   const id = c.req.param("id");
-  const draft = await getDraftById(db, id);
+  const draft = await getDraftById(c.var.db, id);
   if (!draft) return c.json({ error: "Not found" }, 404);
   if (!draft.github_path) return c.json({ error: "This draft has no GitHub source" }, 400);
 
   try {
-    const { content, sha } = await getGithubFile(draft.github_path);
+    const { content, sha } = await createGithub(c.var.env.github).getGithubFile(draft.github_path);
     const { frontmatter: fm, body: mdBody } = parseFrontmatter(content);
     const { title, lang, description, tags, fields } = frontmatterToDraft(fm);
     const now = new Date().toISOString();
 
-    const updated = await updateDraft(db, id, {
+    const updated = await updateDraft(c.var.db, id, {
       title, lang, description, tags, fields, content: mdBody, github_sha: sha, updated_at: now,
     });
     return c.json(updated);

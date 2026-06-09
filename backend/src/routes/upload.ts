@@ -1,11 +1,12 @@
 import { Hono } from "hono";
 import { nanoid } from "nanoid";
 import { mkdir, unlink, readdir, stat } from "node:fs/promises";
-import { uploadToR2, isR2Enabled } from "../lib/r2";
+import type { AppEnv } from "../app";
+import { createR2 } from "../lib/r2";
 
 const OG_TEMP_DIR = "data/og-temp";
 
-const upload = new Hono();
+const upload = new Hono<AppEnv>();
 
 async function ensureOgTempDir() {
   await mkdir(OG_TEMP_DIR, { recursive: true });
@@ -28,7 +29,8 @@ async function cleanupOldOgTemp() {
 
 // POST /api/upload/r2
 upload.post("/upload/r2", async (c) => {
-  if (!isR2Enabled()) return c.json({ error: "R2 not configured" }, 503);
+  const r2 = createR2(c.var.env.r2);
+  if (!r2.isR2Enabled()) return c.json({ error: "R2 not configured" }, 503);
 
   let formData: FormData;
   try {
@@ -45,7 +47,7 @@ upload.post("/upload/r2", async (c) => {
   const buffer = new Uint8Array(await file.arrayBuffer());
 
   try {
-    const url = await uploadToR2(key, buffer, file.type || "application/octet-stream");
+    const url = await r2.uploadToR2(key, buffer, file.type || "application/octet-stream");
     return c.json({ url });
   } catch (err) {
     return c.json({ error: String(err) }, 500);

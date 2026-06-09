@@ -32,6 +32,7 @@
  * - slug 唯一性規則為同語言內唯一（`lang + slug` 不重複），不同語言可用相同 slug
  */
 import { Hono } from "hono";
+import type { AppEnv } from "../app";
 import drafts from "./drafts";
 import github from "./github";
 import translate from "./translate";
@@ -41,7 +42,7 @@ import og from "./og";
 import presets from "./presets";
 import slug from "./slug";
 
-const api = new Hono();
+const api = new Hono<AppEnv>();
 
 api.route("/", drafts);
 api.route("/", github);

@@ -15,7 +15,7 @@ RUN apk add --no-cache su-exec
 
 COPY --from=deps /app/node_modules ./node_modules
 COPY package.json bun.lock ./
-COPY index.ts ./
+COPY server.bun.ts ./
 COPY src ./src
 # drizzle/（版本化 migration）與 scripts/（baseline + migrate）是啟動時套 schema 所需。
 COPY drizzle ./drizzle

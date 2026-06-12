@@ -14,6 +14,7 @@ import type { Context, Hono } from "hono";
 import { cors } from "hono/cors";
 import type { DrizzleDB } from "./lib/db";
 import type { Env } from "./lib/env";
+import type { Storage } from "./lib/storage/types";
 
 /**
  * Hono 的 generic 環境型別：把每 request 的 `db` 與設定 `env` 掛在 `c.var`。
@@ -24,7 +25,7 @@ import type { Env } from "./lib/env";
  */
 export type AppEnv = {
   Bindings: Record<string, unknown>;
-  Variables: { db: DrizzleDB; env: Env };
+  Variables: { db: DrizzleDB; env: Env; storage: Storage };
 };
 
 /**
@@ -35,6 +36,11 @@ export interface RuntimeProviders {
   makeDb: (c: Context<AppEnv>) => DrizzleDB;
   /** 讀取這個 request 的設定（self-host 讀 `process.env` / Workers 讀 `c.env`）。 */
   readEnv: (c: Context<AppEnv>) => Env;
+  /**
+   * 取得這個 request 要用的物件儲存實作（self-host 回 `S3Storage` 單例 / Workers 從 `c.env.BUCKET`
+   * 建 `R2Storage`）。各入口各自 import 自己那一支實作檔，避免 aws-sdk 進 Worker bundle。
+   */
+  makeStorage: (c: Context<AppEnv>) => Storage;
 }
 
 /**
@@ -45,8 +51,9 @@ export interface RuntimeProviders {
  *
  * @remarks
  * 兩個 middleware 都掛在 `/api/*`：
- * 1. **runtime context**：先 `c.set("env")` 再 `c.set("db")`（db 的取得可能依賴 env），
- *    讓後續 route handler 經 `c.var.db` / `c.var.env` 取用。
+ * 1. **runtime context**：依序 `c.set("env")` → `c.set("db")` → `c.set("storage")`
+ *    （db / storage 的取得可能依賴 env，例如 Workers 的 `R2Storage` 需要 `c.var.env.r2.publicUrl`），
+ *    讓後續 route handler 經 `c.var.db` / `c.var.env` / `c.var.storage` 取用。
  * 2. **CORS**：origin 動態取自 `c.var.env.corsOrigins`（同源部署不觸發；只有 self-host dev
  *    跨來源時才放行）。比對命中回該 origin、否則回清單第一個（等同舊 `cors({ origin: array })` 行為）。
  *
@@ -57,6 +64,7 @@ export function installRuntime(app: Hono<AppEnv>, providers: RuntimeProviders): 
   app.use("/api/*", async (c, next) => {
     c.set("env", providers.readEnv(c));
     c.set("db", providers.makeDb(c));
+    c.set("storage", providers.makeStorage(c));
     await next();
   });
 

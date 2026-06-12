@@ -5,21 +5,24 @@
  *
  * ### 資料流
  * 前端只讀本地 DB（`GET /images`）；DB 內容由兩個來源寫入：
- * - `POST /images/sync` — 從 R2 `uploads/` 前綴 list 出物件，upsert 進 DB
- * - `POST /images/upload` — 上傳新檔案到 R2，同時寫入 DB
+ * - `POST /images/sync` — 從儲存的 `uploads/` 前綴 list 出物件，upsert 進 DB
+ * - `POST /images/upload` — 上傳新檔案到儲存，同時寫入 DB
  *
  * ### 已知限制
- * - 所有端點都需要 R2 環境變數齊全，否則回傳 503
+ * - 寫入 / 同步端點都需要 `c.var.storage` 已啟用（設定齊全），否則回傳 503
  * - sync 只匯入副檔名屬於 `IMAGE_EXT` 的物件，非圖片檔案會被略過
- * - 以 R2 物件鍵值（key）作為主鍵 upsert，重複 sync 不會產生重複資料
+ * - 以物件鍵值（key）作為主鍵 upsert，重複 sync 不會產生重複資料
+ *
+ * @remarks
+ * #04 起物件儲存改走 {@link import("../lib/storage/types").Storage} 抽象（`c.var.storage`），
+ * 不再直接依賴 aws-sdk；self-host 注入 `S3Storage`、Workers 注入 R2 binding 的 `R2Storage`。
  */
 import { Hono } from "hono";
 import { nanoid } from "nanoid";
 import type { AppEnv } from "../app";
 import { listImages, upsertImage, insertImage } from "../lib/repos/images";
-import { createR2 } from "../lib/r2";
 
-/** 圖片在 R2 的存放前綴，與 upload route 的 `/upload/r2` 一致。 */
+/** 圖片在儲存中的存放前綴。 */
 const UPLOAD_PREFIX = "uploads/";
 
 /** sync 時允許匯入的圖片副檔名（小寫，不含點）。 */
@@ -48,12 +51,12 @@ images.get("/images", async (c) => {
  * 回傳 `synced` 為實際寫入的圖片數量（已過濾非圖片副檔名）。
  */
 images.post("/images/sync", async (c) => {
-  const r2 = createR2(c.var.env.r2);
-  if (!r2.isR2Enabled()) return c.json({ error: "R2 not configured" }, 503);
+  const storage = c.var.storage;
+  if (!storage.isEnabled()) return c.json({ error: "R2 not configured" }, 503);
 
   let objects;
   try {
-    objects = await r2.listR2Objects(UPLOAD_PREFIX);
+    objects = await storage.list(UPLOAD_PREFIX);
   } catch (err) {
     return c.json({ error: String(err) }, 500);
   }
@@ -82,8 +85,8 @@ images.post("/images/sync", async (c) => {
  * 接受 multipart form，欄位名為 `file`。
  */
 images.post("/images/upload", async (c) => {
-  const r2 = createR2(c.var.env.r2);
-  if (!r2.isR2Enabled()) return c.json({ error: "R2 not configured" }, 503);
+  const storage = c.var.storage;
+  if (!storage.isEnabled()) return c.json({ error: "R2 not configured" }, 503);
 
   const formData = await c.req.formData().catch(() => null);
   if (!formData) return c.json({ error: "Invalid form data" }, 400);
@@ -96,7 +99,8 @@ images.post("/images/upload", async (c) => {
   const buffer = new Uint8Array(await file.arrayBuffer());
 
   try {
-    const url = await r2.uploadToR2(key, buffer, file.type || "application/octet-stream");
+    await storage.put(key, buffer, file.type || "application/octet-stream");
+    const url = storage.publicUrl(key);
     const uploaded_at = new Date().toISOString();
     await insertImage(c.var.db, { key, url, size: file.size, uploaded_at });
     return c.json({ key, url, size: file.size, uploaded_at } satisfies ImageRow);

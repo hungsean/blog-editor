@@ -1,27 +1,32 @@
 /**
  * ## test/helpers/mocks
  *
- * route 整合測試用的外部依賴替身：GitHub REST（`lib/github`）、R2/S3（`lib/r2`）、
+ * route 整合測試用的外部依賴替身：GitHub REST（`lib/github`）、物件儲存（`lib/storage`）、
  * OpenAI 翻譯（`lib/translator`）、OG 圖片生成（`lib/ogImage`）。
  *
  * @remarks
- * #03 起 `lib/github` / `lib/r2` / `lib/translator` 改成 **factory**（`createGithub(env)` 等），
- * route 在每個 handler 內呼叫 factory 取得 client。因此這裡用 `mock.module()` 把 factory 整個
- * 替換成「回傳固定 client 物件」的函式——該 client 的每個 method 都是 `mock()` spy，且**跨呼叫
- * 共用同一個物件**，所以測試在 handler 跑之前設的 `mockResolvedValueOnce` / 之後讀的呼叫紀錄都生效。
+ * #03 起 `lib/github` / `lib/translator` 改成 **factory**（`createGithub(env)` 等），route 在每個
+ * handler 內呼叫 factory 取得 client。因此這裡用 `mock.module()` 把 factory 整個替換成「回傳固定
+ * client 物件」的函式——該 client 的每個 method 都是 `mock()` spy，且**跨呼叫共用同一個物件**，
+ * 所以測試在 handler 跑之前設的 `mockResolvedValueOnce` / 之後讀的呼叫紀錄都生效。
+ *
+ * #04 起物件儲存改由 runtime provider（`makeStorage`）注入 {@link import("../../src/lib/storage/types").Storage}
+ * 介面，route 經 `c.var.storage` 取用、**不再 import 任何實作**。因此 storage 不走 `mock.module()`，
+ * 改由 {@link setupRouteApp} 直接把下方的 {@link storage} spy 當 provider 注入（更貼近真實注入路徑）。
  *
  * 各 mock function 都是 `mock()` spy，測試可：
  * - 直接斷言呼叫次數 / 參數（`expect(github.openPR).toHaveBeenCalled()`）
  * - 以 `mockResolvedValueOnce` / `mockRejectedValueOnce` 覆寫單次行為（測錯誤路徑）
  *
- * **mock 緊貼真實簽章**（對齊 `lib/github`、`lib/r2`、`lib/translator`、`lib/ogImage` 的
- * factory 回傳介面）；若真實介面改動，這裡要同步，否則會假綠。
+ * **mock 緊貼真實簽章**（對齊 `lib/github`、`lib/translator`、`lib/ogImage` 的 factory 回傳介面，
+ * 與 `lib/storage/types` 的 `Storage` 介面）；若真實介面改動，這裡要同步，否則會假綠。
  *
  * `registerMocks()` 必須在**任何會 import 這些模組的 SUT 被載入之前**呼叫
  * （見 `setupRouteEnv.ts` 的載入順序契約）。`resetMocks()` 在每個 route 測試的
  * `beforeEach` 呼叫，清掉呼叫紀錄與單次覆寫，回到預設行為。
  */
 import { mock } from "bun:test";
+import type { Storage, StoredObject } from "../../src/lib/storage/types";
 
 /** GitHub client 的 method spy，對齊 `createGithub(env)` 回傳的介面（route 只用到 file / PR 相關）。 */
 export const github = {
@@ -61,19 +66,21 @@ export const github = {
   defaultBranch: "main",
 };
 
-/** R2 client 的 method spy，對齊 `createR2(env)` 回傳的介面。預設 R2 視為已啟用。 */
-export const r2 = {
-  isR2Enabled: mock((): boolean => true),
-  uploadToR2: mock(
-    async (key: string, _body: Uint8Array, _contentType: string): Promise<string> =>
-      `https://cdn.example.com/${key}`,
-  ),
-  listR2Objects: mock(
-    async (
-      _prefix: string,
-    ): Promise<Array<{ key: string; url: string; size: number; lastModified: string }>> => [],
-  ),
-};
+/**
+ * 物件儲存的 method spy，對齊 {@link Storage} 介面。預設視為已啟用。
+ *
+ * @remarks
+ * `put` 只寫入不回 URL；`publicUrl(key)` 推導 `https://cdn.example.com/{key}`，對齊真實實作的
+ * 「寫入 / URL 推導分離」。`satisfies Storage` 確保介面一旦改動、這裡會編譯錯而非假綠。
+ */
+export const storage = {
+  isEnabled: mock((): boolean => true),
+  put: mock(async (_key: string, _bytes: Uint8Array, _contentType: string): Promise<void> => {}),
+  get: mock(async (_key: string): Promise<Uint8Array | null> => null),
+  list: mock(async (_prefix: string): Promise<StoredObject[]> => []),
+  delete: mock(async (_key: string): Promise<void> => {}),
+  publicUrl: mock((key: string): string => `https://cdn.example.com/${key}`),
+} satisfies Storage;
 
 /** Translator client 的 method spy，對齊 `createTranslator(env)` 回傳的介面。預設翻譯視為已啟用。 */
 export const translator = {
@@ -104,9 +111,10 @@ export const ogImage = {
  * 用 `mock.module()` 把四個 lib 整模組替換掉。
  *
  * @remarks
- * github / r2 / translator 是 factory：mock 的 `createX` **永遠回傳同一個** client 物件
- * （上方的 spy 集合），讓「設定單次覆寫 → handler 內呼叫 → 斷言呼叫紀錄」全程操作同一組 spy。
- * ogImage 仍是具名 function export。
+ * github / translator 是 factory：mock 的 `createX` **永遠回傳同一個** client 物件（上方的 spy
+ * 集合），讓「設定單次覆寫 → handler 內呼叫 → 斷言呼叫紀錄」全程操作同一組 spy。ogImage 仍是
+ * 具名 function export。**storage 不在此**——它改由 {@link setupRouteApp} 經 provider 注入
+ * {@link storage} spy（見上方說明），不需 `mock.module()`。
  *
  * specifier 以**本檔（test/helpers/mocks.ts）為基準**解析至 `src/lib/*`；SUT（route / lib）
  * import 同一個檔案的絕對路徑，Bun 以解析後的絕對路徑比對，因此替換生效。
@@ -114,7 +122,6 @@ export const ogImage = {
  */
 export function registerMocks(): void {
   mock.module("../../src/lib/github", () => ({ createGithub: () => github }));
-  mock.module("../../src/lib/r2", () => ({ createR2: () => r2 }));
   mock.module("../../src/lib/translator", () => ({ createTranslator: () => translator }));
   mock.module("../../src/lib/ogImage", () => ({ ...ogImage }));
 }
@@ -128,9 +135,12 @@ const ALL_SPIES = [
   github.getPR,
   github.getPRFiles,
   github.getFileSha,
-  r2.isR2Enabled,
-  r2.uploadToR2,
-  r2.listR2Objects,
+  storage.isEnabled,
+  storage.put,
+  storage.get,
+  storage.list,
+  storage.delete,
+  storage.publicUrl,
   translator.isTranslationEnabled,
   translator.translateDraft,
   ogImage.generateArticleOg,

@@ -9,10 +9,10 @@
  *   因此必須**每 request** 呼叫 `readEnv(c.env)`，不能在 module top-level 讀。
  *
  * @remarks
- * 這是 #03 runtime 抽象的基礎：所有 lib factory（`createGithub` / `createTranslator` /
- * `createR2`）與 route 都改吃 {@link Env}，不再自己碰 `process.env`，這樣同一份程式碼兩種
- * runtime 都能跑。`readEnv` 只讀字串值（D1 binding 等非字串 binding 由 `makeDb` 另外處理），
- * 故 `process.env` 與 `c.env` 都能當來源傳入。
+ * 這是 #03 runtime 抽象的基礎：所有 lib factory（`createGithub` / `createTranslator`）、物件儲存
+ * （#04 的 `S3Storage` / `R2Storage`）與 route 都改吃 {@link Env}，不再自己碰 `process.env`，這樣
+ * 同一份程式碼兩種 runtime 都能跑。`readEnv` 只讀字串值（D1 binding 等非字串 binding 由 `makeDb`
+ * 另外處理），故 `process.env` 與 `c.env` 都能當來源傳入。
  */
 
 /** GitHub REST API 設定（供 {@link import("./github").createGithub} 使用）。 */
@@ -31,9 +31,10 @@ export interface OpenAIEnv {
 }
 
 /**
- * Cloudflare R2 設定（供 {@link import("./r2").createR2} 使用）。
+ * Cloudflare R2 設定（供 self-host 的 {@link import("./storage/s3").S3Storage} 使用；
+ * Workers 改用原生 R2 binding，僅 `publicUrl` 經此提供）。
  *
- * @remarks 任一欄位缺漏即視為未設定，`createR2().isR2Enabled()` 回 false、上傳功能停用。
+ * @remarks 任一欄位缺漏即視為未設定，`S3Storage.isEnabled()` 回 false、上傳功能停用。
  */
 export interface R2Env {
   accountId?: string;

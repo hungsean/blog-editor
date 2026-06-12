@@ -5,7 +5,9 @@
  *
  * @remarks
  * reviewer 指出 #03 只有 `wrangler deploy --dry-run` 的 bundle 驗證，沒有任何「真的對 worker 入口
- * 發 request」的測試，mounted 子集（drafts / slug / presets）的 runtime 行為等於沒被覆蓋。
+ * 發 request」的測試，mounted 子集（drafts / slug / presets / images）的 runtime 行為等於沒被覆蓋。
+ * #04 起 `images` 已去 aws-sdk、改走 `c.var.storage`，故一併掛上並在此煙霧驗證（storage 未綁
+ * R2 binding 時 `isEnabled()` 為 false，sync 回 503；純讀 DB 的 `GET /images` 不受影響）。
  *
  * drizzle-orm/d1 對 binding 的呼叫面很小（`prepare(sql).bind(...params)` → `all()` / `run()` /
  * `raw()`，外加 `batch()`），可用 bun:sqlite 完整模擬，因此本檔提供 {@link FakeD1Database} 把
@@ -124,6 +126,17 @@ describe("worker 入口：D1 binding 真實處理請求", () => {
   test("GET /api/slug 缺 slug 參數回 400（middleware + route 正常掛載）", async () => {
     const res = await fetchWorker("/api/slug");
     expect(res.status).toBe(400);
+  });
+
+  test("GET /api/images 經 D1 shim 讀回空圖片庫（images 已掛載、純讀 DB 不碰 storage）", async () => {
+    const res = await fetchWorker("/api/images");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual([]);
+  });
+
+  test("POST /api/images/sync 未綁 R2 binding 時回 503（makeStorage 注入、isEnabled=false）", async () => {
+    const res = await fetchWorker("/api/images/sync", { method: "POST" });
+    expect(res.status).toBe(503);
   });
 
   test("未掛載的路由回 404", async () => {

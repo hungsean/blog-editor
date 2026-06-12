@@ -6,10 +6,11 @@
  * runtime provider，回傳已就緒的 `app` 與 `db`。
  *
  * ### 為什麼仍需 dynamic import（Test bootstrap contract）
- * route → `lib/github` / `lib/r2` / `lib/translator` 的 factory 必須被 `mock.module()` 替換掉，
- * 而 `mock.module()` 只對「之後才 import 的模組」生效。ESM static import 會在測試檔 body 執行
+ * route → `lib/github` / `lib/translator` 的 factory 必須被 `mock.module()` 替換掉，而
+ * `mock.module()` 只對「之後才 import 的模組」生效。ESM static import 會在測試檔 body 執行
  * **之前**就解析，因此受測模組（`src/app` → `routes/api` → 各 route → 各 lib）一律以 **dynamic
- * import** 取得，且必須在 `registerMocks()` 之後。
+ * import** 取得，且必須在 `registerMocks()` 之後。物件儲存不走 `mock.module`，改由 `makeStorage`
+ * provider 注入 {@link storage} spy（見下方 {@link setupRouteApp}）。
  *
  * ### db 隔離（#03 後大幅簡化）
  * #03 起 `lib/db.ts` 不再有 module-load side effect / 單例（開檔、migrate 都移到 `server.bun.ts`），
@@ -21,7 +22,7 @@ import { sql } from "drizzle-orm";
 import type { Hono } from "hono";
 import type { AppEnv } from "../../src/app";
 import type { DrizzleDB } from "../../src/lib/db";
-import { registerMocks } from "./mocks";
+import { registerMocks, storage } from "./mocks";
 
 /**
  * 註冊 mock 後 dynamic import，回傳已就緒的測試 app 與其 in-memory db。
@@ -30,7 +31,8 @@ import { registerMocks } from "./mocks";
  * 嚴格順序：`registerMocks()` → dynamic import（`makeTestDb` 開 in-memory db → `src/app`
  * 的 `createApp` 注入 provider）。在 route 測試的 `beforeAll` 呼叫一次即可。回傳的 `db` 供
  * `resetDb()` 清表與斷言 DB 副作用。測試設定以 `readEnv({})` 取預設值即可——對外服務（github /
- * r2 / translator）都已被 mock，env 實際值不影響行為。
+ * translator）都已被 mock，env 實際值不影響行為。物件儲存改由 `makeStorage` 直接注入 {@link storage}
+ * spy（#04 起 route 經 `c.var.storage` 取用，不再 `mock.module` 任何實作）。
  */
 export async function setupRouteApp(): Promise<{ app: Hono<AppEnv>; db: DrizzleDB }> {
   registerMocks();
@@ -45,6 +47,7 @@ export async function setupRouteApp(): Promise<{ app: Hono<AppEnv>; db: DrizzleD
   const app = createApp({
     makeDb: () => db,
     readEnv: () => env,
+    makeStorage: () => storage,
   });
 
   return { app, db };

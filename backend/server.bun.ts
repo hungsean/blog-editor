@@ -4,7 +4,8 @@
  * self-host（Bun）入口。負責所有 Bun-only / 常駐 process 的事：
  * - 開 `bun:sqlite` 連線、跑 migration、建立 db 單例（整個 process 共用一條連線）。
  * - 從 `process.env` 讀一次設定（self-host 啟動即備齊，不需每 request 重讀）。
- * - 用 {@link createApp} 把「db 單例 / 啟動設定」注入成 runtime provider，組出完整 app。
+ * - 建立 {@link S3Storage} 單例（用 aws-sdk 打 R2 的 S3 相容 API）；aws-sdk 只在此鏈被拉入。
+ * - 用 {@link createApp} 把「db / storage 單例 / 啟動設定」注入成 runtime provider，組出完整 app。
  * - 啟動 {@link startPRChecker} 常駐輪詢（Workers 無常駐 process，對應 Cron 在 #05）。
  * - `export default { port, fetch }` 給 `Bun.serve` 起 HTTP server。
  *
@@ -20,6 +21,7 @@ import { createBunSqliteDb, runMigrations } from "./src/lib/db.bun";
 import { readEnv } from "./src/lib/env";
 import { createGithub } from "./src/lib/github";
 import { startPRChecker } from "./src/lib/prChecker";
+import { S3Storage } from "./src/lib/storage/s3";
 
 // --- DB：開檔 → migrate → 建立整個 process 共用的單例 ---
 const DB_PATH = process.env.DB_PATH ?? join(import.meta.dir, "data/blog-editor.db");
@@ -38,10 +40,14 @@ if (!env.github.token || !env.github.owner || !env.github.repo) {
   console.warn("[github] GITHUB_TOKEN / GITHUB_OWNER / GITHUB_REPO 未設定，GitHub 功能將無法使用");
 }
 
-// --- app：把 self-host 的單例 db 與啟動設定注入 runtime provider ---
+// --- 物件儲存：self-host 用 aws-sdk（S3 相容 API）打 R2，啟動設定固定，建一次單例即可 ---
+const storage = new S3Storage(env.r2);
+
+// --- app：把 self-host 的單例 db / storage 與啟動設定注入 runtime provider ---
 const app = createApp({
   makeDb: () => db,
   readEnv: () => env,
+  makeStorage: () => storage,
 });
 
 // --- PR 輪詢常駐任務（self-host only）---

@@ -15,3 +15,10 @@ binding = "DB"
 database_name = "blog-editor"
 database_id = "65e3f85e-c0be-4955-9c8b-7206137d5070"
 migrations_dir = "drizzle"
+
+# R2 物件儲存（#04）：圖片 / OG 上傳改走原生 R2 binding（取代 self-host 的 aws-sdk S3 相容 API）。
+# `R2Storage` 經 `c.env.BUCKET` 取用；公開 URL 由 `R2_PUBLIC_URL` 變數推導（自訂 domain）。
+#   wrangler r2 bucket create blog-editor-images   # 第一次建立後即可用此 binding
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "blog-editor-images"

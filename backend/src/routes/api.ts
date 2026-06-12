@@ -15,9 +15,6 @@
  * - `DELETE /drafts` — 批量刪除草稿（batch，body: `{ draftIds }`）
  * - `GET /translation/status` — 檢查 AI 翻譯是否啟用
  * - `POST /translation` — 翻譯文章內容並回傳結果（不建立草稿）
- * - `POST /upload/r2` — 上傳圖片到 R2，回傳公開 URL
- * - `POST /upload/temp` — 暫存圖片到 data/og-temp/，回傳 token（24 小時有效）
- * - `GET /upload/temp/:token` — 以 base64 data URL 取得暫存圖片
  * - `POST /og/preview` — 套模板生成 OG 圖，回傳 PNG bytes
  * - `POST /og/upload` — 將生成好的 OG PNG 上傳到 R2（鍵值 `og/{draftId}.png`）
  * - `GET /images` — 列出圖片庫（讀本地 DB）
@@ -36,7 +33,6 @@ import type { AppEnv } from "../app";
 import drafts from "./drafts";
 import github from "./github";
 import translate from "./translate";
-import upload from "./upload";
 import images from "./images";
 import og from "./og";
 import presets from "./presets";
@@ -47,7 +43,6 @@ const api = new Hono<AppEnv>();
 api.route("/", drafts);
 api.route("/", github);
 api.route("/", translate);
-api.route("/", upload);
 api.route("/", images);
 api.route("/", og);
 api.route("/", presets);

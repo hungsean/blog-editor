@@ -107,6 +107,16 @@ describe("readEnv 自訂值", () => {
     expect(readEnv({ PR_CHECK_INTERVAL_MS: "5000" }).prCheckIntervalMs).toBe(5000);
   });
 
+  test.each([
+    ["非數字字串", "abc"],
+    ["空字串", ""],
+    ["零", "0"],
+    ["負數", "-5"],
+    ["非字串 binding", 123 as unknown as string],
+  ])("PR_CHECK_INTERVAL_MS 為%s時回退預設 60000（避免 setInterval busy loop）", (_label, value) => {
+    expect(readEnv({ PR_CHECK_INTERVAL_MS: value }).prCheckIntervalMs).toBe(60_000);
+  });
+
   test("NODE_ENV=production 時 isDev 為 false，其餘值為 true", () => {
     expect(readEnv({ NODE_ENV: "production" }).isDev).toBe(false);
     expect(readEnv({ NODE_ENV: "staging" }).isDev).toBe(true);

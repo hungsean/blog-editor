@@ -14,10 +14,10 @@
  * `/api/*`（#08 的 Pages 轉發不 rewrite path）。
  *
  * @remarks
- * `api` mount 了 `upload` / `og` 子 router，它們 transitively import Bun-only（`node:fs`、
- * `Bun.file`）與 native（`@resvg/resvg-js`）模組，故 **import 本檔即會把這些拉進 bundle**——
- * 完整 app 目前只跑得動 self-host。Workers 端要等 #04（storage 去 fs）/ #06（og 去 native）；
- * `worker.ts` 因此不 import 本檔，改直接用 `runtime.ts` 的 {@link installRuntime} 掛精簡子集。
+ * `api` mount 了 `og` 子 router，它 transitively import native（`@resvg/resvg-js`，經 `lib/ogImage`）
+ * 模組，故 **import 本檔即會把它拉進 bundle**——完整 app 目前只跑得動 self-host。Workers 端要等
+ * #06（og 去 native）；`worker.ts` 因此不 import 本檔，改直接用 `runtime.ts` 的 {@link installRuntime}
+ * 掛 Worker-safe 子集（#04 起含已去 aws-sdk 的 `images`）。
  */
 import { Hono } from "hono";
 import { installRuntime, type AppEnv, type RuntimeProviders } from "./runtime";

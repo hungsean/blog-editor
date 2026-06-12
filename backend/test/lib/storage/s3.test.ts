@@ -1,21 +1,23 @@
 /**
- * `lib/r2` 真實 factory 邊界測試：`createR2(env)` 回傳的真實 client。
+ * `lib/storage/s3` 真實實作邊界測試：`S3Storage`（self-host 的 {@link Storage} 實作）。
  *
  * @remarks
- * route 測試用 `mock.module("../../src/lib/r2")` 把整個 factory 換成假 client，因此**真實的**
- * `createR2`（isR2Enabled 設定齊全判定、S3Client lazy singleton、上傳 URL 組裝、list 分頁 +
- * 資料夾標記過濾）在 route 測試裡完全沒被執行——本檔改 mock `@aws-sdk/client-s3`，直接驗證真實
- * factory 對 S3 API 的呼叫與回傳。
+ * route 測試經 provider 注入假 storage，因此**真實的** `S3Storage`（isEnabled 設定齊全判定、
+ * S3Client lazy singleton、put/get/list/delete 對 S3 API 的呼叫、list 分頁 + 資料夾標記過濾、
+ * URL 推導）在 route 測試裡完全沒被執行——本檔改 mock `@aws-sdk/client-s3`，直接驗證真實實作
+ * 對 S3 API 的呼叫與回傳。
  *
- * mock 必須在 import `src/lib/r2`（static import `@aws-sdk/client-s3`）之前註冊，故用 top-level
- * `mock.module` + dynamic import 的順序。
+ * mock 必須在 import `src/lib/storage/s3`（static import `@aws-sdk/client-s3`）之前註冊，故用
+ * top-level `mock.module` + dynamic import 的順序。
  */
 import { describe, test, expect, beforeEach, mock } from "bun:test";
 
-/** 每次 `S3Client.send` 收到的 command（PutObjectCommand / ListObjectsV2Command 實例）。 */
+/** 每次 `S3Client.send` 收到的 command（Put/Get/List/Delete 實例）。 */
 let sent: Array<{ __type: string; input: Record<string, unknown> }> = [];
 /** 預先排好的 ListObjectsV2 回應佇列（測分頁用，依序消費）。 */
 let listResponses: Array<Record<string, unknown>> = [];
+/** 預先排好的 GetObject 回應（或拋出的錯誤）。 */
+let getResponse: { body: Uint8Array | null } | Error = { body: null };
 /** S3Client 被 new 出來的次數（驗證 lazy singleton 只建一次）。 */
 let clientConstructions = 0;
 /** 最近一次 S3Client 的建構設定（驗證 endpoint / credentials）。 */
@@ -32,6 +34,11 @@ mock.module("@aws-sdk/client-s3", () => ({
       if (command.__type === "list") {
         return listResponses.shift() ?? { Contents: [], IsTruncated: false };
       }
+      if (command.__type === "get") {
+        if (getResponse instanceof Error) throw getResponse;
+        const { body } = getResponse;
+        return body === null ? {} : { Body: { transformToByteArray: async () => body } };
+      }
       return {};
     }
   },
@@ -39,13 +46,21 @@ mock.module("@aws-sdk/client-s3", () => ({
     __type = "put";
     constructor(public input: Record<string, unknown>) {}
   },
+  GetObjectCommand: class {
+    __type = "get";
+    constructor(public input: Record<string, unknown>) {}
+  },
   ListObjectsV2Command: class {
     __type = "list";
     constructor(public input: Record<string, unknown>) {}
   },
+  DeleteObjectCommand: class {
+    __type = "delete";
+    constructor(public input: Record<string, unknown>) {}
+  },
 }));
 
-const { createR2 } = await import("../../src/lib/r2");
+const { S3Storage } = await import("../../../src/lib/storage/s3");
 
 const fullEnv = {
   accountId: "acc",
@@ -58,13 +73,14 @@ const fullEnv = {
 beforeEach(() => {
   sent = [];
   listResponses = [];
+  getResponse = { body: null };
   clientConstructions = 0;
   lastClientConfig = null;
 });
 
-describe("isR2Enabled", () => {
+describe("isEnabled", () => {
   test("所有欄位齊全時為 true", () => {
-    expect(createR2(fullEnv).isR2Enabled()).toBe(true);
+    expect(new S3Storage(fullEnv).isEnabled()).toBe(true);
   });
 
   test.each([
@@ -75,20 +91,21 @@ describe("isR2Enabled", () => {
     "publicUrl",
   ])("缺 %s 時為 false", (missing) => {
     const env = { ...fullEnv, [missing]: undefined };
-    expect(createR2(env).isR2Enabled()).toBe(false);
+    expect(new S3Storage(env).isEnabled()).toBe(false);
   });
 
   test("完全空設定為 false", () => {
-    expect(createR2({}).isR2Enabled()).toBe(false);
+    expect(new S3Storage({}).isEnabled()).toBe(false);
   });
 });
 
-describe("uploadToR2", () => {
-  test("送出 PutObjectCommand 並回傳公開 URL", async () => {
+describe("put / publicUrl", () => {
+  test("送出 PutObjectCommand；URL 由 publicUrl 推導", async () => {
     const body = new Uint8Array([1, 2, 3]);
-    const url = await createR2(fullEnv).uploadToR2("uploads/a.png", body, "image/png");
+    const s = new S3Storage(fullEnv);
+    await s.put("uploads/a.png", body, "image/png");
 
-    expect(url).toBe("https://cdn.example.com/uploads/a.png");
+    expect(s.publicUrl("uploads/a.png")).toBe("https://cdn.example.com/uploads/a.png");
     expect(sent).toHaveLength(1);
     expect(sent[0]!.input).toEqual({
       Bucket: "my-bucket",
@@ -105,14 +122,46 @@ describe("uploadToR2", () => {
   });
 
   test("S3Client 為 lazy singleton：多次呼叫只建一次", async () => {
-    const r2 = createR2(fullEnv);
-    await r2.uploadToR2("a", new Uint8Array(), "image/png");
-    await r2.uploadToR2("b", new Uint8Array(), "image/png");
+    const s = new S3Storage(fullEnv);
+    await s.put("a", new Uint8Array(), "image/png");
+    await s.put("b", new Uint8Array(), "image/png");
     expect(clientConstructions).toBe(1);
   });
 });
 
-describe("listR2Objects", () => {
+describe("get", () => {
+  test("回傳物件 bytes", async () => {
+    getResponse = { body: new Uint8Array([9, 8, 7]) };
+    const bytes = await new S3Storage(fullEnv).get("uploads/a.png");
+    expect(bytes).toEqual(new Uint8Array([9, 8, 7]));
+    expect(sent[0]!.input).toEqual({ Bucket: "my-bucket", Key: "uploads/a.png" });
+  });
+
+  test("無 Body 回 null", async () => {
+    getResponse = { body: null };
+    expect(await new S3Storage(fullEnv).get("missing")).toBeNull();
+  });
+
+  test("NoSuchKey 回 null，其餘錯誤往上拋", async () => {
+    const notFound = Object.assign(new Error("missing"), { name: "NoSuchKey" });
+    getResponse = notFound;
+    expect(await new S3Storage(fullEnv).get("missing")).toBeNull();
+
+    getResponse = new Error("boom");
+    await expect(new S3Storage(fullEnv).get("x")).rejects.toThrow("boom");
+  });
+});
+
+describe("delete", () => {
+  test("送出 DeleteObjectCommand", async () => {
+    await new S3Storage(fullEnv).delete("uploads/a.png");
+    expect(sent).toHaveLength(1);
+    expect(sent[0]!.__type).toBe("delete");
+    expect(sent[0]!.input).toEqual({ Bucket: "my-bucket", Key: "uploads/a.png" });
+  });
+});
+
+describe("list", () => {
   test("跨分頁取完所有物件、過濾資料夾標記、補上預設值", async () => {
     const lastModified = new Date("2026-06-09T00:00:00.000Z");
     listResponses = [
@@ -133,7 +182,7 @@ describe("listR2Objects", () => {
       },
     ];
 
-    const objects = await createR2(fullEnv).listR2Objects("uploads/");
+    const objects = await new S3Storage(fullEnv).list("uploads/");
 
     expect(objects).toHaveLength(2);
     expect(objects[0]!).toEqual({
@@ -155,6 +204,6 @@ describe("listR2Objects", () => {
 
   test("無內容時回空陣列", async () => {
     listResponses = [{ Contents: undefined, IsTruncated: false }];
-    expect(await createR2(fullEnv).listR2Objects("uploads/")).toEqual([]);
+    expect(await new S3Storage(fullEnv).list("uploads/")).toEqual([]);
   });
 });

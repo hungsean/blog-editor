@@ -9,10 +9,10 @@
  *   因此必須**每 request** 呼叫 `readEnv(c.env)`，不能在 module top-level 讀。
  *
  * @remarks
- * 這是 #03 runtime 抽象的基礎：所有 lib factory（`createGithub` / `createTranslator` /
- * `createR2`）與 route 都改吃 {@link Env}，不再自己碰 `process.env`，這樣同一份程式碼兩種
- * runtime 都能跑。`readEnv` 只讀字串值（D1 binding 等非字串 binding 由 `makeDb` 另外處理），
- * 故 `process.env` 與 `c.env` 都能當來源傳入。
+ * 這是 #03 runtime 抽象的基礎：所有 lib factory（`createGithub` / `createTranslator`）、物件儲存
+ * （#04 的 `S3Storage` / `R2Storage`）與 route 都改吃 {@link Env}，不再自己碰 `process.env`，這樣
+ * 同一份程式碼兩種 runtime 都能跑。`readEnv` 只讀字串值（D1 binding 等非字串 binding 由 `makeDb`
+ * 另外處理），故 `process.env` 與 `c.env` 都能當來源傳入。
  */
 
 /** GitHub REST API 設定（供 {@link import("./github").createGithub} 使用）。 */
@@ -31,9 +31,10 @@ export interface OpenAIEnv {
 }
 
 /**
- * Cloudflare R2 設定（供 {@link import("./r2").createR2} 使用）。
+ * Cloudflare R2 設定（供 self-host 的 {@link import("./storage/s3").S3Storage} 使用；
+ * Workers 改用原生 R2 binding，僅 `publicUrl` 經此提供）。
  *
- * @remarks 任一欄位缺漏即視為未設定，`createR2().isR2Enabled()` 回 false、上傳功能停用。
+ * @remarks 任一欄位缺漏即視為未設定，`S3Storage.isEnabled()` 回 false、上傳功能停用。
  */
 export interface R2Env {
   accountId?: string;
@@ -50,7 +51,10 @@ export interface Env {
   r2: R2Env;
   /** 允許的 CORS 來源清單（已解析 `CORS_ORIGIN`，空值時帶 localhost 開發預設）。 */
   corsOrigins: string[];
-  /** prChecker 輪詢間隔（毫秒）；僅 self-host 常駐 process 會用到。 */
+  /**
+   * prChecker 輪詢間隔（毫秒）；僅 self-host 常駐 process 會用到。保證為正數——無效設定
+   * （非數字 / NaN / 非正數）會回退預設，避免 `setInterval` 退化成 busy loop。
+   */
   prCheckIntervalMs: number;
   /** 是否為開發模式（`NODE_ENV !== "production"`），控制 verbose log。 */
   isDev: boolean;
@@ -75,6 +79,26 @@ const DEFAULT_CORS_ORIGINS = ["http://localhost:5173", "http://localhost:3000"];
 function readString(source: EnvSource, key: string): string | undefined {
   const value = source[key];
   return typeof value === "string" ? value : undefined;
+}
+
+/**
+ * 從來源取「正整數毫秒」設定；缺漏或無效（非數字 / NaN / 非正數）一律回退 `fallback`。
+ *
+ * @param source - 環境變數來源
+ * @param key - 變數名
+ * @param fallback - 缺漏或無效時的預設值（必須為正數）
+ * @returns 有效的正數，否則 `fallback`
+ *
+ * @remarks
+ * 這是 runtime 邊界的防呆：`prCheckIntervalMs` 會被 self-host 的 `startPRChecker` 拿去
+ * `setInterval`，若放任 `Number("abc") = NaN` 或 `0` / 負值穿透，`setInterval` 會退化成
+ * 近似 0ms 的 busy loop、高頻輪詢 GitHub/DB。故無效值一律回退預設，不讓壞設定癱瘓 process。
+ */
+function readPositiveIntMs(source: EnvSource, key: string, fallback: number): number {
+  const raw = readString(source, key);
+  if (raw === undefined) return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
 /**
@@ -113,7 +137,7 @@ export function readEnv(source: EnvSource): Env {
       publicUrl: readString(source, "R2_PUBLIC_URL")?.replace(/\/$/, ""),
     },
     corsOrigins: corsOrigins.length > 0 ? corsOrigins : DEFAULT_CORS_ORIGINS,
-    prCheckIntervalMs: Number(readString(source, "PR_CHECK_INTERVAL_MS") ?? 60_000),
+    prCheckIntervalMs: readPositiveIntMs(source, "PR_CHECK_INTERVAL_MS", 60_000),
     isDev: (readString(source, "NODE_ENV") ?? "development") !== "production",
   };
 }

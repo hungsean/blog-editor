@@ -3,13 +3,13 @@
  *
  * @remarks
  * OG 圖片生成（satori/resvg）以 `lib/ogImage` 的 mock 隔離，不做真實渲染、不下載字型；
- * R2 上傳以 `lib/r2` mock 隔離。聚焦驗證 / 錯誤路徑，並涵蓋 mock 後的 happy path。
+ * 物件儲存上傳以注入的 storage mock 隔離。聚焦驗證 / 錯誤路徑，並涵蓋 mock 後的 happy path。
  * 遵守 Test bootstrap contract（見 setupRouteEnv）。
  */
 import { describe, test, expect, beforeAll, beforeEach, afterAll } from "bun:test";
 import { setupRouteApp, resetDb, cleanupRouteDb } from "../helpers/setupRouteEnv";
 import { makeClient, type Client } from "../helpers/http";
-import { r2, ogImage, resetMocks } from "../helpers/mocks";
+import { storage, ogImage, resetMocks } from "../helpers/mocks";
 
 type Ctx = Awaited<ReturnType<typeof setupRouteApp>>;
 let app: Ctx["app"];
@@ -52,8 +52,8 @@ describe("POST /og/preview", () => {
 });
 
 describe("POST /og/upload", () => {
-  test("R2 未設定回 503", async () => {
-    r2.isR2Enabled.mockReturnValueOnce(false);
+  test("儲存未設定回 503", async () => {
+    storage.isEnabled.mockReturnValueOnce(false);
     const form = new FormData();
     form.set("file", new File([new Uint8Array([1])], "og.png", { type: "image/png" }));
     form.set("draftId", "draft1");
@@ -91,11 +91,11 @@ describe("POST /og/upload", () => {
     const res = await c.form("/api/og/upload", "POST", form);
     expect(res.status).toBe(200);
     expect(((await res.json()) as { url: string }).url).toBe("https://cdn.example.com/og/draft1.png");
-    expect(r2.uploadToR2).toHaveBeenCalledWith("og/draft1.png", expect.anything(), "image/png");
+    expect(storage.put).toHaveBeenCalledWith("og/draft1.png", expect.anything(), "image/png");
   });
 
-  test("uploadToR2 拋錯回 500", async () => {
-    r2.uploadToR2.mockRejectedValueOnce(new Error("r2 down"));
+  test("storage.put 拋錯回 500", async () => {
+    storage.put.mockRejectedValueOnce(new Error("r2 down"));
     const form = new FormData();
     form.set("file", new File([new Uint8Array([1])], "og.png", { type: "image/png" }));
     form.set("draftId", "draft1");

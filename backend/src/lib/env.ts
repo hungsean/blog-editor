@@ -51,7 +51,10 @@ export interface Env {
   r2: R2Env;
   /** 允許的 CORS 來源清單（已解析 `CORS_ORIGIN`，空值時帶 localhost 開發預設）。 */
   corsOrigins: string[];
-  /** prChecker 輪詢間隔（毫秒）；僅 self-host 常駐 process 會用到。 */
+  /**
+   * prChecker 輪詢間隔（毫秒）；僅 self-host 常駐 process 會用到。保證為正數——無效設定
+   * （非數字 / NaN / 非正數）會回退預設，避免 `setInterval` 退化成 busy loop。
+   */
   prCheckIntervalMs: number;
   /** 是否為開發模式（`NODE_ENV !== "production"`），控制 verbose log。 */
   isDev: boolean;
@@ -76,6 +79,26 @@ const DEFAULT_CORS_ORIGINS = ["http://localhost:5173", "http://localhost:3000"];
 function readString(source: EnvSource, key: string): string | undefined {
   const value = source[key];
   return typeof value === "string" ? value : undefined;
+}
+
+/**
+ * 從來源取「正整數毫秒」設定；缺漏或無效（非數字 / NaN / 非正數）一律回退 `fallback`。
+ *
+ * @param source - 環境變數來源
+ * @param key - 變數名
+ * @param fallback - 缺漏或無效時的預設值（必須為正數）
+ * @returns 有效的正數，否則 `fallback`
+ *
+ * @remarks
+ * 這是 runtime 邊界的防呆：`prCheckIntervalMs` 會被 self-host 的 `startPRChecker` 拿去
+ * `setInterval`，若放任 `Number("abc") = NaN` 或 `0` / 負值穿透，`setInterval` 會退化成
+ * 近似 0ms 的 busy loop、高頻輪詢 GitHub/DB。故無效值一律回退預設，不讓壞設定癱瘓 process。
+ */
+function readPositiveIntMs(source: EnvSource, key: string, fallback: number): number {
+  const raw = readString(source, key);
+  if (raw === undefined) return fallback;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
 }
 
 /**
@@ -114,7 +137,7 @@ export function readEnv(source: EnvSource): Env {
       publicUrl: readString(source, "R2_PUBLIC_URL")?.replace(/\/$/, ""),
     },
     corsOrigins: corsOrigins.length > 0 ? corsOrigins : DEFAULT_CORS_ORIGINS,
-    prCheckIntervalMs: Number(readString(source, "PR_CHECK_INTERVAL_MS") ?? 60_000),
+    prCheckIntervalMs: readPositiveIntMs(source, "PR_CHECK_INTERVAL_MS", 60_000),
     isDev: (readString(source, "NODE_ENV") ?? "development") !== "production",
   };
 }

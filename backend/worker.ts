@@ -1,10 +1,12 @@
 /**
  * ## worker.ts
  *
- * Cloudflare Workers 入口。與 `server.bun.ts` 共用 `src/app.ts` 的 runtime 抽象，但 db / env
- * 來源不同：
+ * Cloudflare Workers 入口。與 `server.bun.ts` 共用 `src/runtime.ts` 的 runtime 抽象
+ * （{@link installRuntime} 同一份 middleware），但**不** import `src/app.ts`（避免連帶把 `og` 的 native
+ * 相依拉進 bundle），改自行 mount Worker-safe subset。db / env / storage 來源也與 self-host 不同：
  * - `makeDb`：每 request 從 `c.env.DB`（D1 binding）用 {@link createD1Db} 建（Workers 無常駐單例）。
  * - `readEnv`：每 request 讀 `c.env`（binding 在 import 期尚未注入，故不能在 module top-level 讀）。
+ * - `makeStorage`：每 request 從 `c.env.BUCKET`（R2 binding）建 {@link R2Storage}（不碰 aws-sdk）。
  *
  * ### ⚠️ Worker 範圍：尚未掛 `og`
  * `og` 子 router transitively import native 的 `@resvg/resvg-js`（`lib/ogImage`），現階段無法

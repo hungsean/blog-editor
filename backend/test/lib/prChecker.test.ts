@@ -277,6 +277,24 @@ describe("checkDraftsExistOnGithub：draft 遠端同步", () => {
 });
 
 describe("runPrChecks", () => {
+  test("關閉未合併的 PR 在同一輪不會被遠端檔案偵測重新發布", async () => {
+    await seed({
+      id: "closed-pr", status: "pr_opened", pr_url: "https://github.com/me/blog/pull/21",
+      lang: "en", slug: "still-on-main", github_path: "src/content/blog/en/still-on-main.md",
+    });
+    const github = makeFakeGithub({
+      getPR: mock(async () => ({ number: 21, state: "closed", merged: false, head: { ref: "f" }, base: { ref: "main" } })),
+      getFileSha: mock(async () => "existing-on-main"),
+    });
+
+    await runPrChecks(db, github);
+
+    const draft = await getDraftById(db, "closed-pr");
+    expect(draft!.status).toBe("draft");
+    expect(draft!.pr_url).toBe("");
+    expect(github.getFileSha).not.toHaveBeenCalled();
+  });
+
   test("同一個 PR 的多篇草稿只查一次，並分別對應各自的檔案", async () => {
     await seed({ id: "batch-a", status: "pr_opened", pr_url: "https://github.com/me/blog/pull/20", github_path: "src/content/blog/en/a.md" });
     await seed({ id: "batch-b", status: "pr_opened", pr_url: "https://github.com/me/blog/pull/20", github_path: "src/content/blog/en/b.md" });

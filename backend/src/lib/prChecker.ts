@@ -143,10 +143,13 @@ async function reconcileRemoteDrafts(
   db: DrizzleDB,
   github: Github,
   result: ReconcileResult,
+  excludedDraftIds: ReadonlySet<string>,
   maxDrafts: number,
   devLog: DevLog,
 ): Promise<void> {
-  const drafts = (await listSyncableDrafts(db)).slice(0, maxDrafts);
+    const drafts = (await listSyncableDrafts(db))
+      .filter((draft) => !excludedDraftIds.has(draft.id))
+      .slice(0, maxDrafts);
   for (const draft of drafts) {
     const slug = (draft.slug ?? "").trim();
     const path = `src/content/blog/${draft.lang}/${slug}.md`;
@@ -199,7 +202,14 @@ export async function runPrChecks(
   const devLog = options.devLog ?? (() => {});
   try {
     await reconcilePrOpenedDrafts(db, github, result, options.maxPrs ?? DEFAULT_MAX_PRS, devLog);
-    await reconcileRemoteDrafts(db, github, result, options.maxDrafts ?? DEFAULT_MAX_DRAFTS, devLog);
+    await reconcileRemoteDrafts(
+      db,
+      github,
+      result,
+      new Set(result.returnedToDraft),
+      options.maxDrafts ?? DEFAULT_MAX_DRAFTS,
+      devLog,
+    );
     return result;
   } finally {
     isReconciling = false;

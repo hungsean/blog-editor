@@ -114,9 +114,9 @@ export default function TopBar({ selectMode = false, onToggleSelectMode, onSynce
                     console.error("[sync] partial failures:", result.errors);
                 }
             }
-            // 即使遠端內容未變，reconcile 仍可能已把 closed PR 退回 draft，故必須 reload。
-            onSynced?.();
         } finally {
+            // 失敗時也重新抓列表，避免 reconcile 已部分改寫狀態卻讓畫面停在舊資料。
+            onSynced?.();
             setSyncing(false);
         }
     }

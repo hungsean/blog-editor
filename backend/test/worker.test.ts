@@ -139,6 +139,18 @@ describe("worker 入口：D1 binding 真實處理請求", () => {
     expect(res.status).toBe(503);
   });
 
+  test("Cron scheduled 會將 reconcile 工作交給 ctx.waitUntil", async () => {
+    const pending: Promise<unknown>[] = [];
+    const scheduled = (worker as unknown as {
+      scheduled: (event: unknown, bindings: typeof env, ctx: { waitUntil: (promise: Promise<unknown>) => void }) => Promise<void>;
+    }).scheduled;
+
+    await scheduled({}, env, { waitUntil: (promise) => pending.push(promise) });
+
+    expect(pending).toHaveLength(1);
+    await pending[0];
+  });
+
   test("未掛載的路由回 404", async () => {
     const res = await fetchWorker("/api/nope");
     expect(res.status).toBe(404);

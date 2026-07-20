@@ -8,7 +8,7 @@
  * `fetch`，直接驗證真實 client 的行為與發出的 HTTP 請求。
  */
 import { describe, test, expect, beforeEach, afterEach } from "bun:test";
-import { createGithub } from "../../src/lib/github";
+import { createGithub, GithubApiError } from "../../src/lib/github";
 
 type Recorded = { url: string; method: string; headers: Record<string, string>; body?: string };
 
@@ -60,11 +60,13 @@ describe("githubFetch（認證標頭與錯誤處理）", () => {
     expect(calls[0]!.url).toBe("https://api.github.com/repos/me/blog/branches/main");
   });
 
-  test("非 2xx 回應會丟出含狀態碼與 body 的錯誤", async () => {
+  test("非 2xx 回應會丟出帶 HTTP status 與 body 的錯誤", async () => {
     routeFetch([{ method: "GET", match: "/branches/main", status: 404, text: "Not Found" }]);
-    await expect(createGithub(env).listGithubPosts()).rejects.toThrow(
-      "GitHub API error 404: Not Found",
-    );
+    const error = await createGithub(env).listGithubPosts().catch((err: unknown) => err);
+
+    expect(error).toBeInstanceOf(GithubApiError);
+    expect((error as GithubApiError).status).toBe(404);
+    expect((error as Error).message).toBe("GitHub API error 404: Not Found");
   });
 });
 

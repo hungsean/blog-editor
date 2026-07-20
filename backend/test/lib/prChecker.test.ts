@@ -9,8 +9,8 @@
  * 直接驗證兩條輪詢路徑（pr_opened 狀態轉移、draft 遠端同步）對 DB 的副作用。
  */
 import { describe, test, expect, beforeEach, afterEach, mock, spyOn } from "bun:test";
-import { startPRChecker } from "../../src/lib/prChecker";
-import type { Github } from "../../src/lib/github";
+import { startPRChecker, runPrChecks } from "../../src/lib/prChecker";
+import { GithubApiError, type Github } from "../../src/lib/github";
 import { makeTestDb } from "../helpers/makeTestDb";
 import { createDraft, getDraftById } from "../../src/lib/repos/drafts";
 import type { DrizzleDB } from "../../src/lib/db";
@@ -233,7 +233,7 @@ describe("checkDraftsExistOnGithub：draft 遠端同步", () => {
       github_path: "stale", github_sha: "stale-sha",
     });
     const github = makeFakeGithub({
-      getFileSha: mock(async () => { throw new Error("404"); }),
+      getFileSha: mock(async () => { throw new GithubApiError(404, "not found"); }),
     });
 
     startPRChecker({ db, github, intervalMs: 1000, isDev: false });
@@ -246,8 +246,7 @@ describe("checkDraftsExistOnGithub：draft 遠端同步", () => {
 
   test("slug 與他篇衝突 → 跳過自動標記、維持 draft", async () => {
     // 另一篇已 published 占用同 lang/slug。
-    await seed({
-      id: "other", title: "Other", status: "published", lang: "en", slug: "dup",
+    await seed({ id: "other", title: "Other", status: "published", lang: "en", slug: "dup",
       github_path: "src/content/blog/en/dup.md",
     });
     await seed({ id: "s3", title: "Mine", status: "draft", lang: "en", slug: "dup" });
@@ -258,5 +257,42 @@ describe("checkDraftsExistOnGithub：draft 遠端同步", () => {
     await new Promise((r) => realSetInterval(r, 15));
 
     expect((await getDraftById(db, "s3"))!.status).toBe("draft");
+  });
+
+  test("非 404 的遠端錯誤保留既有 GitHub 同步資訊", async () => {
+    await seed({
+      id: "s4", status: "draft", lang: "en", slug: "rate-limited",
+      github_path: "stale", github_sha: "stale-sha",
+    });
+    const github = makeFakeGithub({
+      getFileSha: mock(async () => { throw new GithubApiError(403, "rate limited"); }),
+    });
+
+    await runPrChecks(db, github);
+
+    const draft = await getDraftById(db, "s4");
+    expect(draft!.github_path).toBe("stale");
+    expect(draft!.github_sha).toBe("stale-sha");
+  });
+});
+
+describe("runPrChecks", () => {
+  test("同一個 PR 的多篇草稿只查一次，並分別對應各自的檔案", async () => {
+    await seed({ id: "batch-a", status: "pr_opened", pr_url: "https://github.com/me/blog/pull/20", github_path: "src/content/blog/en/a.md" });
+    await seed({ id: "batch-b", status: "pr_opened", pr_url: "https://github.com/me/blog/pull/20", github_path: "src/content/blog/en/b.md" });
+    const getPR = mock(async () => ({ number: 20, state: "closed", merged: true, head: { ref: "f" }, base: { ref: "main" } }));
+    const getPRFiles = mock(async () => [
+      { filename: "src/content/blog/en/a.md", sha: "sha-a", status: "added" },
+      { filename: "src/content/blog/en/b.md", sha: "sha-b", status: "added" },
+    ]);
+    const github = makeFakeGithub({ getPR, getPRFiles });
+
+    const result = await runPrChecks(db, github);
+
+    expect(getPR).toHaveBeenCalledTimes(1);
+    expect(getPRFiles).toHaveBeenCalledTimes(1);
+    expect((await getDraftById(db, "batch-a"))!.github_sha).toBe("sha-a");
+    expect((await getDraftById(db, "batch-b"))!.github_sha).toBe("sha-b");
+    expect(result.published).toEqual(expect.arrayContaining(["batch-a", "batch-b"]));
   });
 });

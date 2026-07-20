@@ -1,54 +1,62 @@
 /**
- * ## prChecker
+ * ## PR reconcile service
  *
- * 定時輪詢兩類文章：
- * 1. status = 'pr_opened'：檢查 PR 是否已合併 → published，或已關閉 → 退回 draft
- * 2. status = 'draft'（有 lang + slug）：檢查遠端是否已存在該檔案 → 若有則更新為 published
+ * 將 PR 狀態對帳與遠端檔案偵測集中為 runtime-neutral service：self-host 的 interval、
+ * Cloudflare Cron 與手動 endpoint 都呼叫 {@link runPrChecks}。
  *
  * @remarks
- * `github_sha` 直接使用 PR Files API 回傳的 blob SHA，不再呼叫 Contents API。
- * draft 同步使用 Contents API 取得 SHA；404 視為檔案不存在，靜默略過。
- * 輪詢間隔由 caller 注入（self-host 從 `env.prCheckIntervalMs` 帶入，預設 60 秒）。
- *
- * PR 合併後，靠 publish 時保存的 `github_path` 對應 PR 內的 .md 檔案。
- * 批次 PR 一個 `pr_url` 對應多篇 draft，若只抓第一個 .md 會讓每篇 draft 都被
- * 標成同一個檔案，污染 DB。沒有 `github_path` 的舊資料才退回抓第一個 .md。
- *
- * ### 依賴注入（#03）
- * 不再 import db 單例與 GitHub function / 直接讀 `process.env`。改由 {@link startPRChecker}
- * 注入 `{ db, github, intervalMs, isDev }`——self-host 入口（`server.bun.ts`）用啟動時建好的
- * db 單例與 {@link import("./github").createGithub} client 呼叫。prChecker 是 self-host 常駐
- * process 才有的功能；Workers 端對應的 Cron 觸發在 #05 處理。
+ * 同一個 `pr_url` 的草稿會分組後只查一次 PR / files，避免 batch publish 的 N+1 GitHub 請求。
+ * 只在 GitHub 明確回傳 404 時清除 stale `github_path` / `github_sha`；認證、rate limit、
+ * 網路等其他失敗會保留資料並收進摘要，避免把暫時故障誤判成遠端刪檔。
  */
 import type { DrizzleDB } from "./db";
 import {
+  findSlugConflictBrief,
   listPrOpenedDrafts,
   listSyncableDrafts,
-  findSlugConflictBrief,
   updateDraft,
 } from "./repos/drafts";
-import type { Github, PRFile } from "./github";
+import { GithubApiError, type Github, type PRFile } from "./github";
 
-/** 寫 verbose log 的函式型別（self-host 依 `isDev` 決定是否輸出）。 */
 type DevLog = (...args: unknown[]) => void;
 
-/** {@link startPRChecker} 的注入依賴。 */
 export interface PRCheckerDeps {
   db: DrizzleDB;
   github: Github;
-  /** 輪詢間隔（毫秒）。 */
   intervalMs: number;
-  /** 是否輸出 verbose log（`env.isDev`）。 */
   isDev: boolean;
 }
 
+export interface ReconcileOptions {
+  /** 每輪最多處理多少個不同 PR；其餘留到下一輪。 */
+  maxPrs?: number;
+  /** 每輪最多處理多少篇可同步 draft；其餘留到下一輪。 */
+  maxDrafts?: number;
+  /** 自訂詳細 log；未提供時不輸出 verbose log。 */
+  devLog?: DevLog;
+}
+
+export interface ReconcileResult {
+  published: string[];
+  returnedToDraft: string[];
+  clearedRemoteState: string[];
+  errors: string[];
+  skipped: boolean;
+}
+
+const DEFAULT_MAX_PRS = 25;
+const DEFAULT_MAX_DRAFTS = 100;
+let isReconciling = false;
+
+function emptyResult(skipped = false): ReconcileResult {
+  return { published: [], returnedToDraft: [], clearedRemoteState: [], errors: [], skipped };
+}
+
 /** PR 內屬於部落格文章、且非刪除狀態的 .md 檔案。 */
-function isBlogMd(f: PRFile): boolean {
-  return (
-    f.status !== "removed" &&
-    f.filename.startsWith("src/content/blog/") &&
-    f.filename.endsWith(".md")
-  );
+function isBlogMd(file: PRFile): boolean {
+  return file.status !== "removed"
+    && file.filename.startsWith("src/content/blog/")
+    && file.filename.endsWith(".md");
 }
 
 function extractPrNumber(prUrl: string): number | null {
@@ -56,126 +64,155 @@ function extractPrNumber(prUrl: string): number | null {
   return match ? Number(match[1]) : null;
 }
 
-async function checkOnce(db: DrizzleDB, github: Github, devLog: DevLog) {
-  devLog(`[prChecker] 開始檢查 pr_opened 文章...`);
-  const drafts = await listPrOpenedDrafts(db);
+function isNotFound(error: unknown): error is GithubApiError {
+  return error instanceof GithubApiError && error.status === 404;
+}
 
-  if (drafts.length === 0) {
-    devLog(`[prChecker] 無待檢查的 pr_opened 文章`);
-    return;
+async function reconcilePrOpenedDrafts(
+  db: DrizzleDB,
+  github: Github,
+  result: ReconcileResult,
+  maxPrs: number,
+  devLog: DevLog,
+): Promise<void> {
+  const groups = new Map<string, Awaited<ReturnType<typeof listPrOpenedDrafts>>>();
+  for (const draft of await listPrOpenedDrafts(db)) {
+    const existing = groups.get(draft.pr_url) ?? [];
+    existing.push(draft);
+    groups.set(draft.pr_url, existing);
   }
-  devLog(`[prChecker] 找到 ${drafts.length} 篇待檢查文章`);
 
-  for (const draft of drafts) {
-    const prNumber = extractPrNumber(draft.pr_url);
+  for (const [prUrl, drafts] of Array.from(groups.entries()).slice(0, maxPrs)) {
+    const prNumber = extractPrNumber(prUrl);
     if (!prNumber) {
-      console.warn(`[prChecker] 無法解析 PR URL: ${draft.pr_url}`);
+      result.errors.push(`無法解析 PR URL: ${prUrl}`);
       continue;
     }
 
     try {
-      devLog(`[prChecker] 檢查 "${draft.title}" PR #${prNumber}...`);
       const pr = await github.getPR(prNumber);
-      devLog(`[prChecker] PR #${prNumber} 狀態: state=${pr.state}, merged=${pr.merged}`);
-
       if (pr.state === "closed" && !pr.merged) {
         const now = new Date().toISOString();
-        await updateDraft(db, draft.id, { status: "draft", pr_url: "", updated_at: now });
-        console.log(`[prChecker] "${draft.title}" PR #${prNumber} 已關閉未合併，退回草稿`);
+        for (const draft of drafts) {
+          await updateDraft(db, draft.id, { status: "draft", pr_url: "", updated_at: now });
+          result.returnedToDraft.push(draft.id);
+        }
         continue;
       }
 
       if (pr.merged && pr.base.ref !== github.defaultBranch) {
         const now = new Date().toISOString();
-        await updateDraft(db, draft.id, { status: "draft", pr_url: "", updated_at: now });
-        console.log(`[prChecker] "${draft.title}" PR #${prNumber} 合併至 ${pr.base.ref} 而非 ${github.defaultBranch}，退回草稿`);
+        for (const draft of drafts) {
+          await updateDraft(db, draft.id, { status: "draft", pr_url: "", updated_at: now });
+          result.returnedToDraft.push(draft.id);
+        }
         continue;
       }
 
-      if (!pr.merged) {
-        devLog(`[prChecker] PR #${prNumber} 尚未合併，略過`);
-        continue;
-      }
+      if (!pr.merged) continue;
 
       const files = await github.getPRFiles(prNumber);
-      // 用 publish 時保存的 github_path 精準對應；舊資料無 github_path 才退回第一個 .md。
-      const mdFile = draft.github_path
-        ? files.find((f) => isBlogMd(f) && f.filename === draft.github_path)
-        : files.find(isBlogMd);
-
-      if (!mdFile) {
-        console.warn(
-          `[prChecker] PR #${prNumber} 找不到對應 "${draft.title}" 的 .md 檔案 (${draft.github_path || "first blog .md"})，跳過`
-        );
-        continue;
-      }
-
+      const fallback = files.find(isBlogMd);
       const now = new Date().toISOString();
-
-      await updateDraft(db, draft.id, {
-        status: "published", pr_url: "",
-        github_path: mdFile.filename, github_sha: mdFile.sha, updated_at: now,
-      });
-
-      console.log(`[prChecker] "${draft.title}" PR #${prNumber} 已合併，標記為 published`);
-    } catch (err) {
-      console.error(`[prChecker] 檢查 PR #${prNumber} 失敗:`, err);
+      for (const draft of drafts) {
+        const file = draft.github_path
+          ? files.find((candidate) => isBlogMd(candidate) && candidate.filename === draft.github_path)
+          : fallback;
+        if (!file) {
+          result.errors.push(`PR #${prNumber} 找不到對應 ${draft.id} 的 blog markdown 檔案`);
+          continue;
+        }
+        await updateDraft(db, draft.id, {
+          status: "published",
+          pr_url: "",
+          github_path: file.filename,
+          github_sha: file.sha,
+          updated_at: now,
+        });
+        result.published.push(draft.id);
+      }
+    } catch (error) {
+      const message = `PR #${prNumber} 對帳失敗: ${String(error)}`;
+      result.errors.push(message);
+      devLog(`[prChecker] ${message}`);
     }
   }
 }
 
-async function checkDraftsExistOnGithub(db: DrizzleDB, github: Github, devLog: DevLog) {
-  devLog(`[prChecker] 開始同步 draft 文章...`);
-  const drafts = await listSyncableDrafts(db);
-
-  if (drafts.length === 0) {
-    devLog(`[prChecker] 無待同步的 draft 文章`);
-    return;
-  }
-  devLog(`[prChecker] 找到 ${drafts.length} 篇待同步 draft 文章`);
-
+async function reconcileRemoteDrafts(
+  db: DrizzleDB,
+  github: Github,
+  result: ReconcileResult,
+  maxDrafts: number,
+  devLog: DevLog,
+): Promise<void> {
+  const drafts = (await listSyncableDrafts(db)).slice(0, maxDrafts);
   for (const draft of drafts) {
     const slug = (draft.slug ?? "").trim();
     const path = `src/content/blog/${draft.lang}/${slug}.md`;
-    devLog(`[prChecker] 檢查遠端是否存在 "${draft.title}" (${path})...`);
     try {
       const sha = await github.getFileSha(path);
-      const slugConflict = await findSlugConflictBrief(db, draft.lang, slug, draft.id);
-
-      if (slugConflict && draft.github_path !== path) {
-        console.warn(
-          `[prChecker] "${draft.title}" 與 "${slugConflict.title}" slug 重複，略過自動標記 published (${path})`
-        );
+      const conflict = await findSlugConflictBrief(db, draft.lang, slug, draft.id);
+      if (conflict && draft.github_path !== path) {
+        result.errors.push(`草稿 ${draft.id} 與 ${conflict.id} slug 衝突，略過自動發布`);
         continue;
       }
-
-      const now = new Date().toISOString();
       await updateDraft(db, draft.id, {
-        status: "published", github_path: path, github_sha: sha, updated_at: now,
+        status: "published",
+        github_path: path,
+        github_sha: sha,
+        updated_at: new Date().toISOString(),
       });
-      console.log(`[prChecker] "${draft.title}" 在遠端已存在，標記為 published`);
-    } catch {
-      // 404 = 遠端尚無此檔案，清空 github_path / sha 確保狀態乾淨
-      const now = new Date().toISOString();
-      await updateDraft(db, draft.id, { github_path: "", github_sha: "", updated_at: now });
-      devLog(`[prChecker] "${draft.title}" 遠端尚無此檔案，清空 github_path/sha`);
+      result.published.push(draft.id);
+    } catch (error) {
+      if (isNotFound(error)) {
+        await updateDraft(db, draft.id, {
+          github_path: "",
+          github_sha: "",
+          updated_at: new Date().toISOString(),
+        });
+        result.clearedRemoteState.push(draft.id);
+        continue;
+      }
+      const message = `草稿 ${draft.id} 遠端同步失敗: ${String(error)}`;
+      result.errors.push(message);
+      devLog(`[prChecker] ${message}`);
     }
   }
 }
 
 /**
- * 啟動 self-host 的 PR 輪詢常駐任務。
+ * 執行一次 GitHub PR / draft 對帳，並回傳可供 Cron 與手動 endpoint 顯示的摘要。
  *
- * @param deps - 注入的 db 單例、GitHub client、輪詢間隔與 dev flag（見 {@link PRCheckerDeps}）
- * @remarks 僅 self-host（有常駐 process）呼叫；Workers 端用 Cron 觸發，於 #05 處理。
+ * @remarks
+ * 同 process / isolate 同時只允許一輪，避免 self-host interval 或重疊 Cron 對同一份草稿重複寫入。
+ * 跨 isolate 的全域互斥不在本 issue 範圍；處理本身為 idempotent，且每輪有 PR / draft 上限。
  */
-export function startPRChecker(deps: PRCheckerDeps): void {
-  const { db, github, intervalMs, isDev } = deps;
-  const devLog: DevLog = (...args) => { if (isDev) console.log(...args); };
+export async function runPrChecks(
+  db: DrizzleDB,
+  github: Github,
+  options: ReconcileOptions = {},
+): Promise<ReconcileResult> {
+  if (isReconciling) return emptyResult(true);
+  isReconciling = true;
+  const result = emptyResult();
+  const devLog = options.devLog ?? (() => {});
+  try {
+    await reconcilePrOpenedDrafts(db, github, result, options.maxPrs ?? DEFAULT_MAX_PRS, devLog);
+    await reconcileRemoteDrafts(db, github, result, options.maxDrafts ?? DEFAULT_MAX_DRAFTS, devLog);
+    return result;
+  } finally {
+    isReconciling = false;
+  }
+}
 
-  console.log(`[prChecker] 啟動，每 ${intervalMs / 1000} 秒檢查一次`);
+/** 啟動 self-host 常駐 timer；每一輪呼叫同一份 reconcile service。 */
+export function startPRChecker(deps: PRCheckerDeps): void {
+  const devLog: DevLog = (...args) => { if (deps.isDev) console.log(...args); };
+  console.log(`[prChecker] 啟動，每 ${deps.intervalMs / 1000} 秒檢查一次`);
   setInterval(() => {
-    checkOnce(db, github, devLog).catch((err) => console.error("[prChecker] 輪詢錯誤:", err));
-    checkDraftsExistOnGithub(db, github, devLog).catch((err) => console.error("[prChecker] draft 同步錯誤:", err));
-  }, intervalMs);
+    void runPrChecks(deps.db, deps.github, { devLog }).catch((error) => {
+      console.error("[prChecker] 輪詢錯誤:", error);
+    });
+  }, deps.intervalMs);
 }

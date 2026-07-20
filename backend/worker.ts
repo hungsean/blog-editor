@@ -14,7 +14,8 @@
  * 的 R2 binding 實作），與 `drafts` / `slug` / `presets` 一同掛載。
  *
  * 完整 Worker 啟動（含 `og`）要等 #06（og 去 native）清掉相依，並由 #07 補上 `nodejs_compat`
- * （github 的 `Buffer` base64）後驗收。`scheduled`（取代 self-host 的 prChecker 常駐輪詢）在 #05 補上。
+ * （github 的 `Buffer` base64）後驗收。#05 的 `scheduled` 已改為呼叫共用 reconcile service，
+ * 並以 `ctx.waitUntil` 讓 Cron 任務在 handler 返回後繼續完成。
  */
 import { Hono } from "hono";
 import { installRuntime, type AppEnv } from "./src/runtime";
@@ -25,6 +26,9 @@ import drafts from "./src/routes/drafts";
 import slug from "./src/routes/slug";
 import presets from "./src/routes/presets";
 import images from "./src/routes/images";
+import github from "./src/routes/github";
+import { createGithub } from "./src/lib/github";
+import { runPrChecks } from "./src/lib/prChecker";
 
 const app = new Hono<AppEnv>();
 
@@ -41,9 +45,14 @@ api.route("/", drafts);
 api.route("/", slug);
 api.route("/", presets);
 api.route("/", images);
+api.route("/", github);
 app.route("/api", api);
 
 export default {
   fetch: app.fetch,
-  // scheduled（取代 self-host 的 prChecker 常駐輪詢）在 #05 補上。
+  async scheduled(_event: ScheduledEvent, env: Record<string, unknown>, ctx: ExecutionContext) {
+    const workerEnv = env as { DB: D1Database; [key: string]: unknown };
+    const runtimeEnv = readEnv(workerEnv);
+    ctx.waitUntil(runPrChecks(createD1Db(workerEnv.DB), createGithub(runtimeEnv.github)));
+  },
 };

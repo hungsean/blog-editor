@@ -56,6 +56,16 @@ describe("GET /github/posts", () => {
   });
 });
 
+describe("POST /github/reconcile", () => {
+  test("回傳共用 reconcile service 的摘要", async () => {
+    const res = await c.post("/api/github/reconcile", {});
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      published: [], returnedToDraft: [], clearedRemoteState: [], errors: [], skipped: false,
+    });
+  });
+});
+
 describe("POST /github/sync", () => {
   test("缺 paths 回 400", async () => {
     expect((await c.post("/api/github/sync", {})).status).toBe(400);

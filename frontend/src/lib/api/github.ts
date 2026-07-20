@@ -18,6 +18,20 @@ export async function fetchGithubPosts(): Promise<GithubPost[]> {
   return res.json();
 }
 
+export type ReconcileResult = {
+  published: string[];
+  returnedToDraft: string[];
+  clearedRemoteState: string[];
+  errors: string[];
+  skipped: boolean;
+};
+
+export async function reconcileGithub(): Promise<ReconcileResult> {
+  const res = await fetch(`${BASE}/api/github/reconcile`, { method: "POST" });
+  if (!res.ok) throw new Error("Failed to reconcile GitHub PRs");
+  return res.json();
+}
+
 export async function syncFromGithub(paths: string[], force = false): Promise<SyncResult> {
   const res = await fetch(`${BASE}/api/github/sync`, {
     method: "POST",

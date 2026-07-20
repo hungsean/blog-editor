@@ -10,6 +10,9 @@ name = "blog-editor-backend"
 main = "worker.ts"
 compatibility_date = "2026-06-07"
 
+[triggers]
+crons = ["* * * * *"]
+
 [[d1_databases]]
 binding = "DB"
 database_name = "blog-editor"

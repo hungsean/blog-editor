@@ -56,6 +56,17 @@ export interface PRFile {
 /** {@link createGithub} 回傳的 GitHub client 型別（含 `defaultBranch` 與所有 REST 操作）。 */
 export type Github = ReturnType<typeof createGithub>;
 
+/** GitHub REST API 的非成功回應，保留 HTTP status 供呼叫端精準分流。 */
+export class GithubApiError extends Error {
+  constructor(
+    public readonly status: number,
+    body: string,
+  ) {
+    super(`GitHub API error ${status}: ${body}`);
+    this.name = "GithubApiError";
+  }
+}
+
 /**
  * 建立綁定特定 repo 設定的 GitHub client。
  *
@@ -75,7 +86,7 @@ export function createGithub(env: GithubEnv) {
    * @param path - API 路徑，不含 base URL（例如 `/repos/owner/repo/pulls`）
    * @param options - 標準 `RequestInit`，headers 會被合併而非覆蓋
    * @returns 解析後的 JSON 回應
-   * @throws 若 HTTP 狀態碼非 2xx，拋出含錯誤訊息的 `Error`
+   * @throws 若 HTTP 狀態碼非 2xx，拋出帶 `status` 的 {@link GithubApiError}
    */
   async function githubFetch(path: string, options: RequestInit = {}) {
     const res = await fetch(`${BASE_URL}${path}`, {
@@ -91,7 +102,7 @@ export function createGithub(env: GithubEnv) {
 
     if (!res.ok) {
       const body = await res.text();
-      throw new Error(`GitHub API error ${res.status}: ${body}`);
+      throw new GithubApiError(res.status, body);
     }
 
     return res.json();

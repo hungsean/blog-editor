@@ -14,7 +14,7 @@ import {
 } from "@/components/ui/popover";
 import PresetSettings from "@/components/settings/PresetSettings";
 import { createDraft } from "@/lib/api/drafts";
-import { fetchGithubPosts, syncFromGithub } from "@/lib/api/github";
+import { fetchGithubPosts, reconcileGithub, syncFromGithub } from "@/lib/api/github";
 
 interface TopBarProps {
     selectMode?: boolean;
@@ -102,6 +102,10 @@ export default function TopBar({ selectMode = false, onToggleSelectMode, onSynce
         if (syncing) return;
         setSyncing(true);
         try {
+            const reconcileResult = await reconcileGithub();
+            if (reconcileResult.errors.length > 0) {
+                console.error("[reconcile] partial failures:", reconcileResult.errors);
+            }
             const posts = await fetchGithubPosts();
             const paths = posts.map((p) => p.path);
             if (paths.length > 0) {
@@ -109,11 +113,10 @@ export default function TopBar({ selectMode = false, onToggleSelectMode, onSynce
                 if (result.errors.length > 0) {
                     console.error("[sync] partial failures:", result.errors);
                 }
-                if (result.imported.length > 0 || result.updated.length > 0) {
-                    onSynced?.();
-                }
             }
         } finally {
+            // 失敗時也重新抓列表，避免 reconcile 已部分改寫狀態卻讓畫面停在舊資料。
+            onSynced?.();
             setSyncing(false);
         }
     }

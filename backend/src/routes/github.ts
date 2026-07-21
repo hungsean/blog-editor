@@ -8,6 +8,7 @@ import {
   updateDraft,
 } from "../lib/repos/drafts";
 import { createGithub } from "../lib/github";
+import { runPrChecks } from "../lib/prChecker";
 import { parseFrontmatter, frontmatterToDraft, extractFromPath } from "../lib/frontmatter";
 
 const github = new Hono<AppEnv>();
@@ -21,6 +22,13 @@ github.get("/github/posts", async (c) => {
   } catch (err) {
     return c.json({ error: String(err) }, 500);
   }
+});
+
+// POST /api/github/reconcile
+// 與 self-host timer / Worker Cron 共用同一份對帳邏輯，供使用者在 Cron 延遲時手動觸發。
+github.post("/github/reconcile", async (c) => {
+  const result = await runPrChecks(c.var.db, createGithub(c.var.env.github));
+  return c.json(result);
 });
 
 // POST /api/github/sync

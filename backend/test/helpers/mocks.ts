@@ -67,6 +67,23 @@ export const github = {
 };
 
 /**
+ * `lib/github` module mock 對應的 API error 類別。
+ *
+ * @remarks
+ * `routes/github` 會載入 `prChecker`，而後者以 `instanceof GithubApiError` 區分遠端 404。
+ * 整模組替換時必須保留這個具名 runtime export；否則 route-only test process 會在 import 階段失敗。
+ */
+export class MockGithubApiError extends Error {
+  constructor(
+    public readonly status: number,
+    body: string,
+  ) {
+    super(`GitHub API error ${status}: ${body}`);
+    this.name = "GithubApiError";
+  }
+}
+
+/**
  * 物件儲存的 method spy，對齊 {@link Storage} 介面。預設視為已啟用。
  *
  * @remarks
@@ -121,7 +138,10 @@ export const ogImage = {
  * 必須在 dynamic import SUT 之前呼叫。
  */
 export function registerMocks(): void {
-  mock.module("../../src/lib/github", () => ({ createGithub: () => github }));
+  mock.module("../../src/lib/github", () => ({
+    createGithub: () => github,
+    GithubApiError: MockGithubApiError,
+  }));
   mock.module("../../src/lib/translator", () => ({ createTranslator: () => translator }));
   mock.module("../../src/lib/ogImage", () => ({ ...ogImage }));
 }
